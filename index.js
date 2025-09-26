@@ -41,6 +41,7 @@ import {
   initialize_settings,
   initialize_settings_listeners,
   load_settings_html_manually,
+  refresh_settings_ui,
   defaultSimFields,
   handlePresetExport,
   handlePresetImport,
@@ -119,6 +120,11 @@ jQuery(async () => {
     
     initialize_settings_listeners(wrappedLoadTemplate, wrappedRefreshAllCards, wrappedMigrateAllSimData, wrappedHandleCustomTemplateUpload, wrappedHandlePresetExport, wrappedHandlePresetImport, wrappedShowManagePresetsModal);
     log("Settings panel listeners initialized.");
+    
+    // Refresh the settings UI to populate form elements with existing settings
+    refresh_settings_ui();
+    log("Settings UI refreshed with existing values.");
+    
     await wrappedLoadTemplate();
 
     // Set up MutationObserver to hide sim code blocks as they stream in
