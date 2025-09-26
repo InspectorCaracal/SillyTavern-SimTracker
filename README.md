@@ -29,8 +29,9 @@ A powerful SillyTavern extension that dynamically renders visually appealing tra
 
 ### Customization Options
 - **Customizable Templates**: Choose from built-in templates or create your own custom HTML templates
+- **Custom Emoji Icons**: Override default icons for any field by specifying custom emojis in your JSON data
 - **Flexible Styling**: Adjust colors, layouts, and visual elements to match your preferences
-- **Configurable Code Blocks**: Set your own identifier for sim data blocks (default: "sim")
+- **Configurable Code Blocks**: Set your own identifier for sim data blocks (default: "sim")  
 - **Thought Bubble Display**: Toggle visibility of character internal thoughts
 - **Card Color Customization**: Set default background colors with automatic dark variants
 
@@ -100,6 +101,53 @@ characters:
     tp: 80
     cp: 20
 ```
+
+### Custom Icons
+
+The extension supports custom emoji icons for any field in your JSON data. You can specify custom icons using several formats:
+
+**Format 1: Field + "Icon"**
+```yaml
+worldData:
+  current_date: "2025-08-10"
+  current_time: "14:30"
+characters:
+  - name: "Alice"
+    ap: 75
+    apIcon: 💖
+    dp: 60
+    dpIcon: 🌸
+    energy: 80
+    energyIcon: ⚡
+```
+
+**Format 2: Icons Object**
+```yaml
+worldData:
+  current_date: "2025-08-10"
+  current_time: "14:30"  
+characters:
+  - name: "Alice"
+    ap: 75
+    dp: 60
+    energy: 80
+    icons:
+      ap: 💖
+      dp: 🌸
+      energy: ⚡
+```
+
+**Format 3: Other Naming Conventions**
+```yaml
+characters:
+  - name: "Alice"
+    ap: 75
+    ap_icon: 💖        # underscore format
+    dp: 60
+    icon_dp: 🌸        # prefix format
+```
+
+Custom icons override the default icons for any field, allowing you to personalize your tracker cards with any emoji you prefer. If no custom icon is specified, the extension will use its intelligent pattern-matching system to assign appropriate default icons based on the field name.
 
 ## Usage Examples
 

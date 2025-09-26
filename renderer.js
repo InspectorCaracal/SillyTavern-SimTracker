@@ -3,6 +3,7 @@ import { getContext } from "../../../extensions.js";
 import { messageFormatting } from "../../../../script.js";
 import { extractTemplatePosition, currentTemplatePosition } from "./templating.js";
 import { parseTrackerData } from "./formatUtils.js";
+import { extractDisplayableFields, generateDynamicStatsHtml } from "./fieldMapping.js";
 
 const MODULE_NAME = "silly-sim-tracker";
 const CONTAINER_ID = "silly-sim-tracker-container";
@@ -359,7 +360,7 @@ function attachTabEventListeners(sidebarElement) {
 }
 
 // --- RENDER LOGIC ---
-const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString) => {
+const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString, withSim = true) => {
   try {
     if (!get_settings("isEnabled")) return;
     const context = getContext();
@@ -386,43 +387,65 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
     const jsonRegex = new RegExp("```" + identifier + "[\\s\\S]*?```");
     const match = message.mes.match(jsonRegex);
 
-    // Handle message formatting and sim block hiding
-    if (get_settings("hideSimBlocks")) {
-      let displayMessage = message.mes;
-
-      // Hide sim blocks with spans (for pre-processing)
-      const hideRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
-      displayMessage = displayMessage.replace(
-        hideRegex,
-        (match) => `<span style="display: none !important;">${match}</span>`
-      );
-
-      // Format and display the message content (without the tracker UI)
-      messageElement.innerHTML = messageFormatting(
-        displayMessage,
-        message.name,
-        message.is_system,
-        message.is_user,
-        mesId
-      );
+    // Handle message formatting (different behavior based on withSim parameter)
+    let displayMessage = message.mes;
+    if (withSim) {
+      // renderTracker behavior: hide sim blocks with spans for preprocessing
+      if (get_settings("hideSimBlocks")) {
+        const hideRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
+        displayMessage = displayMessage.replace(
+          hideRegex,
+          (match) => `<span style="display: none !important;">${match}</span>`
+        );
+      }
     } else {
-      // Just format the message if not hiding blocks
-      messageElement.innerHTML = messageFormatting(
-        message.mes,
-        message.name,
-        message.is_system,
-        message.is_user,
-        mesId
-      );
+      // renderTrackerWithoutSim behavior: hide sim blocks completely
+      if (get_settings("hideSimBlocks")) {
+        const hideRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
+        displayMessage = displayMessage.replace(
+          hideRegex,
+          (match) => `<span style="display: none !important;">${match}</span>`
+        );
+      }
     }
 
-    if (match) {
+    // Format and display the message content
+    messageElement.innerHTML = messageFormatting(
+      displayMessage,
+      message.name,
+      message.is_system,
+      message.is_user,
+      mesId
+    );
+
+    // Determine which data to use
+    let dataToProcess = null;
+    let shouldProcessData = false;
+
+    if (match && withSim) {
+      // renderTracker: process sim data from current message
+      dataToProcess = match[0];
+      shouldProcessData = true;
       // Set flag to indicate we're processing a message with sim data
       isGenerationInProgress = true;
+    } else if (match && !withSim) {
+      // renderTrackerWithoutSim: process sim data from current message
+      dataToProcess = match[0];
+      shouldProcessData = true;
+      // Remove existing container to prevent duplication
+      const existingContainer = messageElement.querySelector(`#${CONTAINER_ID}`);
+      if (existingContainer) {
+        existingContainer.remove();
+      }
+    } else if (!withSim && lastSimJsonString) {
+      // renderTrackerWithoutSim fallback: use previous sim data if available
+      dataToProcess = `\`\`\`${identifier}\n${lastSimJsonString}\n\`\`\``;
+      shouldProcessData = true;
+    }
 
-      // Extract content from the match
-      const fullContent = match[0];
-      const content = fullContent
+    if (shouldProcessData && dataToProcess) {
+      // Extract content from the data
+      const content = dataToProcess
         .replace(/```/g, "")
         .replace(new RegExp(`^${identifier}\\s*`), "")
         .trim();
@@ -509,6 +532,11 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
               return null;
             }
             const bgColor = stats.bg || get_settings("defaultBgColor");
+            
+            // Extract dynamic fields for this character
+            const dynamicFields = extractDisplayableFields(stats);
+            const dynamicStatsHtml = generateDynamicStatsHtml(dynamicFields);
+            
             return {
               characterName: name,
               currentDate: currentDate,
@@ -531,6 +559,8 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
               healthIcon:
                 stats.health === 1 ? "🤕" : stats.health === 2 ? "💀" : null,
               showThoughtBubble: get_settings("showThoughtBubble"),
+              dynamicFields: dynamicFields,
+              dynamicStatsHtml: dynamicStatsHtml,
             };
           })
           .filter(Boolean); // Remove any null entries
@@ -555,6 +585,11 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
               return "";
             }
             const bgColor = stats.bg || get_settings("defaultBgColor");
+            
+            // Extract dynamic fields for this character
+            const dynamicFields = extractDisplayableFields(stats);
+            const dynamicStatsHtml = generateDynamicStatsHtml(dynamicFields);
+            
             const cardData = {
               characterName: name,
               currentDate: currentDate,
@@ -577,6 +612,8 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
               healthIcon:
                 stats.health === 1 ? "🤕" : stats.health === 2 ? "💀" : null,
               showThoughtBubble: get_settings("showThoughtBubble"),
+              dynamicFields: dynamicFields,
+              dynamicStatsHtml: dynamicStatsHtml,
             };
             return compiledCardTemplate(cardData);
           })
@@ -646,274 +683,8 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
 };
 
 const renderTrackerWithoutSim = (mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString) => {
-  try {
-    if (!get_settings("isEnabled")) return;
-
-    const context = getContext();
-    const message = context.chat[mesId];
-
-    if (!message) {
-      console.log(`[SST] [${MODULE_NAME}]`, `Error: Could not find message with ID ${mesId}. Aborting render.`);
-      return;
-    }
-
-    const messageElement = document.querySelector(
-      `div[mesid="${mesId}"] .mes_text`
-    );
-    if (!messageElement) return;
-
-    const identifier = get_settings("codeBlockIdentifier");
-    let displayMessage = message.mes;
-
-    // Hide sim blocks if the setting is enabled
-    if (get_settings("hideSimBlocks")) {
-      const hideRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
-      displayMessage = displayMessage.replace(
-        hideRegex,
-        (match) => `<span style="display: none !important;">${match}</span>`
-      );
-    }
-
-    // Format and display the message content (without the tracker UI)
-    messageElement.innerHTML = messageFormatting(
-      displayMessage,
-      message.name,
-      message.is_system,
-      message.is_user,
-      mesId
-    );
-
-    // Parse the sim data from the original message content (not the hidden version)
-    const dataMatch = message.mes.match(
-      new RegExp("```" + identifier + "[\\s\\S]*?```", "m")
-    );
-
-    if (dataMatch && dataMatch[0]) {
-      // Remove the container if it already exists to prevent duplication on re-renders
-      const existingContainer = messageElement.querySelector(
-        `#${CONTAINER_ID}`
-      );
-      if (existingContainer) {
-        existingContainer.remove();
-      }
-
-      const jsonContent = dataMatch[0]
-        .replace(/```/g, "")
-        .replace(new RegExp(`^${identifier}\s*`), "")
-        .trim();
-
-      // Update lastSimJsonString
-      lastSimJsonString = jsonContent;
-
-      // Remove any preparing text
-      const preparingText = messageElement.parentNode.querySelector(".sst-preparing-text");
-      if (preparingText) {
-        preparingText.remove();
-        // Remove this mesText from the set since it no longer has preparing text
-        mesTextsWithPreparingText.delete(messageElement);
-      }
-
-      let jsonData;
-
-      try {
-        // Use our new universal parser that can handle both JSON and YAML
-        jsonData = parseTrackerData(jsonContent);
-      } catch (parseError) {
-        console.log(`[SST] [${MODULE_NAME}]`,
-          `Failed to parse tracker data in message ID ${mesId}. Error: ${parseError.message}`
-        );
-        const errorHtml = `<div style="color: red; font-family: monospace;">[SillySimTracker] Error: Invalid tracker data format in code block.</div>`;
-        messageElement.insertAdjacentHTML("beforeend", errorHtml);
-        return;
-      }
-
-      if (typeof jsonData !== "object" || jsonData === null) {
-        console.log(`[SST] [${MODULE_NAME}]`, `Parsed data in message ID ${mesId} is not a valid object.`);
-        return;
-      }
-      // Handle both old and new JSON formats
-      let worldData, characterList;
-
-      // Check if it's the new format (with worldData and characters array)
-      if (jsonData.worldData && Array.isArray(jsonData.characters)) {
-        worldData = jsonData.worldData;
-        characterList = jsonData.characters;
-      } else {
-        // Handle old format - convert object structure to array format
-        const worldDataFields = ["current_date", "current_time"];
-        worldData = {};
-        characterList = [];
-
-        Object.keys(jsonData).forEach((key) => {
-          if (worldDataFields.includes(key)) {
-            worldData[key] = jsonData[key];
-          } else {
-            // Convert character object to array item
-            characterList.push({
-              name: key,
-              ...jsonData[key],
-            });
-          }
-        });
-      }
-
-      const currentDate = worldData.current_date || "Unknown Date";
-      const currentTime = worldData.current_time || "Unknown Time";
-
-      if (!characterList.length) return;
-
-      // For tabbed templates, we need to pass all characters to the template
-      const templateFile = get_settings("templateFile");
-      const customTemplateHtml = get_settings("customTemplateHtml");
-      const isTabbedTemplate = templateFile.includes("tabs") ||
-                               (customTemplateHtml && customTemplateHtml.includes("sim-tracker-tabs"));
-
-      let cardsHtml = "";
-      if (isTabbedTemplate) {
-        // Prepare data for all characters
-        const charactersData = characterList
-          .map((character, index) => {
-            const stats = character;
-            const name = character.name;
-            if (!stats) {
-              console.log(`[SST] [${MODULE_NAME}]`,
-                `No stats found for character "${name}" in message ID ${mesId}. Skipping card.`
-              );
-              return null;
-            }
-            const bgColor = stats.bg || get_settings("defaultBgColor");
-            return {
-              characterName: name,
-              currentDate: currentDate,
-              currentTime: currentTime,
-              stats: {
-                ...stats,
-                internal_thought:
-                  stats.internal_thought ||
-                  stats.thought ||
-                  "No thought recorded.",
-                relationshipStatus:
-                  stats.relationshipStatus || "Unknown Status",
-                desireStatus: stats.desireStatus || "Unknown Desire",
-                inactive: stats.inactive || false,
-                inactiveReason: stats.inactiveReason || 0,
-              },
-              bgColor: bgColor,
-              darkerBgColor: darkenColor(bgColor),
-              reactionEmoji: getReactionEmoji(stats.last_react),
-              healthIcon:
-                stats.health === 1 ? "🤕" : stats.health === 2 ? "💀" : null,
-              showThoughtBubble: get_settings("showThoughtBubble"),
-            };
-          })
-          .filter(Boolean); // Remove any null entries
-
-        // For tabbed templates, we pass all characters in one data object
-        const templateData = {
-          characters: charactersData,
-          currentDate: currentDate,
-          currentTime: currentTime,
-        };
-
-        cardsHtml = compiledCardTemplate(templateData);
-      } else {
-        cardsHtml = characterList
-          .map((character) => {
-            const stats = character;
-            const name = character.name;
-            if (!stats) {
-              console.log(`[SST] [${MODULE_NAME}]`,
-                `No stats found for character "${name}" in message ID ${mesId}. Skipping card.`
-              );
-              return "";
-            }
-            const bgColor = stats.bg || get_settings("defaultBgColor");
-            const cardData = {
-              characterName: name,
-              currentDate: currentDate,
-              currentTime: currentTime,
-              stats: {
-                ...stats,
-                internal_thought:
-                  stats.internal_thought ||
-                  stats.thought ||
-                  "No thought recorded.",
-                relationshipStatus:
-                  stats.relationshipStatus || "Unknown Status",
-                desireStatus: stats.desireStatus || "Unknown Desire",
-                inactive: stats.inactive || false,
-                inactiveReason: stats.inactiveReason || 0,
-              },
-              bgColor: bgColor,
-              darkerBgColor: darkenColor(bgColor),
-              reactionEmoji: getReactionEmoji(stats.last_react),
-              healthIcon:
-                stats.health === 1 ? "🤕" : stats.health === 2 ? "💀" : null,
-              showThoughtBubble: get_settings("showThoughtBubble"),
-            };
-            return compiledCardTemplate(cardData);
-          })
-          .join("");
-      }
-
-      // Use the template position from the templating module
-      const templatePosition = currentTemplatePosition;
-
-      // Handle different positions
-      switch (templatePosition) {
-        case "ABOVE":
-          // Insert above the message content (inside the message block)
-          const reasoningElement = messageElement.querySelector(
-            ".mes_reasoning_details"
-          );
-          if (reasoningElement) {
-            // Insert above reasoning details if they exist
-            const finalHtml =
-              compiledWrapperTemplate({ cardsHtml }) +
-              `<hr style="margin-top: 15px; margin-bottom: 20px;">`;
-            reasoningElement.insertAdjacentHTML("beforebegin", finalHtml);
-          } else {
-            // If no reasoning details, insert at the beginning of the message
-            const finalHtml =
-              compiledWrapperTemplate({ cardsHtml }) +
-              `<hr style="margin-top: 15px; margin-bottom: 20px;">`;
-            messageElement.insertAdjacentHTML("afterbegin", finalHtml);
-          }
-          break;
-        case "LEFT":
-          // Update the global left sidebar with the latest data
-          updateLeftSidebar(compiledWrapperTemplate({ cardsHtml }));
-          break;
-        case "RIGHT":
-          // Update the global right sidebar with the latest data
-          updateRightSidebar(compiledWrapperTemplate({ cardsHtml }));
-          break;
-        case "MACRO":
-          // For MACRO position, replace the placeholder in the message
-          const placeholder = messageElement.querySelector(
-            "#sst-macro-placeholder"
-          );
-          if (placeholder) {
-            const finalHtml = compiledWrapperTemplate({ cardsHtml });
-            placeholder.insertAdjacentHTML("beforebegin", finalHtml);
-            placeholder.remove();
-          }
-          break;
-        case "BOTTOM":
-        default:
-          // Add a horizontal divider before the cards
-          const finalHtml =
-            `<hr style="margin-top: 15px; margin-bottom: 20px;">` +
-            compiledWrapperTemplate({ cardsHtml });
-          messageElement.insertAdjacentHTML("beforeend", finalHtml);
-          break;
-      }
-    }
-  } catch (error) {
-    console.log(`[SST] [${MODULE_NAME}]`,
-      `A critical error occurred in renderTrackerWithoutSim for message ID ${mesId}. Please check the console. Error: ${error.stack}`
-    );
-  }
+  // Simply call renderTracker with withSim=false
+  return renderTracker(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString, false);
 };
 
 const refreshAllCards = (get_settings, CONTAINER_ID, renderTrackerWithoutSim) => {
