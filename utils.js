@@ -158,14 +158,14 @@ const filterSimBlocksInPrompt = (chat, get_settings) => {
 // Utility function to migrate old JSON format to new format
 const migrateJsonFormat = (oldJsonData) => {
   // Check if it's already in the new format
-  if (oldJsonData.worldData && Array.isArray(oldJsonData.characters)) {
+  if (oldJsonData.worldData && Array.isArray(oldJsonData.cards)) {
     return oldJsonData; // Already in new format
   }
 
   // Create new format structure
   const newJsonData = {
     worldData: {},
-    characters: [],
+    cards: [],
   };
 
   // Define known world data fields
@@ -177,7 +177,7 @@ const migrateJsonFormat = (oldJsonData) => {
       newJsonData.worldData[key] = oldJsonData[key];
     } else {
       // Convert character object to array item
-      newJsonData.characters.push({
+      newJsonData.cards.push({
         name: key,
         ...oldJsonData[key],
       });
@@ -223,7 +223,7 @@ const migrateAllSimData = async (get_settings) => {
             const jsonData = parseTrackerData(content);
 
             // Check if it's already in new format
-            if (jsonData.worldData && Array.isArray(jsonData.characters)) {
+            if (jsonData.worldData && Array.isArray(jsonData.cards)) {
               return; // Already in new format, skip
             }
 

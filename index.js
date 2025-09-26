@@ -303,7 +303,7 @@ jQuery(async () => {
         let exampleYaml = "worldData:\n";
         exampleYaml += "  current_date: \"[CURRENT_STORY_DATE]\"  # YYYY-MM-DD\n";
         exampleYaml += "  current_time: \"[CURRENT_STORY_TIME]\"  # 24-hour time (e.g., 21:34, 10:21)\n";
-        exampleYaml += "characters:\n";
+        exampleYaml += "cards:\n";
         exampleYaml += "  - name: \"[CHARACTER_NAME]\"\n";
 
         // Add each custom field as a commented key-value pair
@@ -327,7 +327,7 @@ ${exampleYaml}\`\`\``;
         exampleJson += "    \"current_date\": \"[CURRENT_STORY_DATE]\", // YYYY-MM-DD\n";
         exampleJson += "    \"current_time\": \"[CURRENT_STORY_TIME]\" // 24-hour time (e.g., 21:34, 10:21)\n";
         exampleJson += "  },\n";
-        exampleJson += "  \"characters\": [\n";
+        exampleJson += "  \"cards\": [\n";
         exampleJson += "    {\n";
         exampleJson += "      \"name\": \"[CHARACTER_NAME]\",\n";
 
@@ -414,7 +414,7 @@ ${exampleJson}
 worldData:
   current_date: ""
   current_time: ""
-characters:
+cards:
   - name: ""
     ap: 0
     dp: 0
@@ -430,7 +430,7 @@ characters:
     "current_date": "",
     "current_time": ""
   },
-  "characters": [
+  "cards": [
     {
       "name": "",
       "ap": 0,

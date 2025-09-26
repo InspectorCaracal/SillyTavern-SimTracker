@@ -54,8 +54,8 @@ const parseYaml = (yamlContent) => {
           const parent = stack[stack.length - 1];
           // Find the key that should contain this array
           // This is a simplification - in real YAML the array would be associated with a key
-          // For our purposes, we'll assume it's for the characters field
-          parent.characters = currentArray;
+          // For our purposes, we'll assume it's for the cards field
+          parent.cards = currentArray;
         }
         
         // Extract the content after "- "

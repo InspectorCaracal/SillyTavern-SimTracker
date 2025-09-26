@@ -484,10 +484,10 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
       // Handle both old and new JSON formats
       let worldData, characterList;
 
-      // Check if it's the new format (with worldData and characters array)
-      if (jsonData.worldData && Array.isArray(jsonData.characters)) {
+      // Check if it's the new format (with worldData and cards array)
+      if (jsonData.worldData && Array.isArray(jsonData.cards)) {
         worldData = jsonData.worldData;
-        characterList = jsonData.characters;
+        characterList = jsonData.cards;
       } else {
         // Handle old format - convert object structure to array format
         const worldDataFields = ["current_date", "current_time"];
@@ -512,7 +512,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
 
       if (!characterList.length) return;
 
-      // For tabbed templates, we need to pass all characters to the template
+      // For tabbed templates, we need to pass all cards to the template
       const templateFile = get_settings("templateFile");
       const customTemplateHtml = get_settings("customTemplateHtml");
       const isTabbedTemplate = templateFile.includes("tabs") ||
@@ -520,7 +520,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
 
       let cardsHtml = "";
       if (isTabbedTemplate) {
-        // Prepare data for all characters
+        // Prepare data for all cards
         const charactersData = characterList
           .map((character, index) => {
             const stats = character;
@@ -565,9 +565,9 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
           })
           .filter(Boolean); // Remove any null entries
 
-        // For tabbed templates, we pass all characters in one data object
+        // For tabbed templates, we pass all cards in one data object
         const templateData = {
-          characters: charactersData,
+          cards: charactersData,
           currentDate: currentDate,
           currentTime: currentTime,
         };

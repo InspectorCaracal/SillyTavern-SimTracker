@@ -77,7 +77,7 @@ Supports both legacy and modern JSON formats:
     "current_date": "2025-08-10",
     "current_time": "14:30"
   },
-  "characters": [
+  "cards": [
     {
       "name": "Alice",
       "ap": 75,
@@ -94,7 +94,7 @@ Supports both legacy and modern JSON formats:
 worldData:
   current_date: "2025-08-10"
   current_time: "14:30"
-characters:
+cards:
   - name: "Alice"
     ap: 75
     dp: 60
@@ -111,7 +111,7 @@ The extension supports custom emoji icons for any field in your JSON data. You c
 worldData:
   current_date: "2025-08-10"
   current_time: "14:30"
-characters:
+cards:
   - name: "Alice"
     ap: 75
     apIcon: 💖
@@ -126,7 +126,7 @@ characters:
 worldData:
   current_date: "2025-08-10"
   current_time: "14:30"  
-characters:
+cards:
   - name: "Alice"
     ap: 75
     dp: 60
@@ -139,7 +139,7 @@ characters:
 
 **Format 3: Other Naming Conventions**
 ```yaml
-characters:
+cards:
   - name: "Alice"
     ap: 75
     ap_icon: 💖        # underscore format

@@ -236,7 +236,7 @@
 
 <div class="sim-tracker-container">
   <div class="sim-tracker-tabs">
-    {{#each characters}}
+    {{#each cards}}
     <div
       class="sim-tracker-tab"
       data-character="{{@index}}"
@@ -252,7 +252,7 @@
     {{/each}}
   </div>
 
-  {{#each characters}}
+  {{#each cards}}
   <div
     class="sim-tracker-card {{#if stats.inactive}}narrative-inactive{{/if}}"
     data-character="{{@index}}"
@@ -367,7 +367,7 @@
 
 <!-- 
 TEMPLATE VARIABLES:
-- {{characters}}: Array of character objects with their data
+- {{cards}}: Array of character objects with their data
 - {{characterName}}: Character's name
 - {{currentDate}}: Current date in YYYY-MM-DD format
 - {{bgColor}}: Primary background color

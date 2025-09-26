@@ -342,7 +342,7 @@ const initialize_settings_listeners = (
   $("#migrateJsonFormatBtn").on("click", () => {
     if (
       confirm(
-        "This will migrate all existing sim data to the new format with worldData and characters array. This operation cannot be undone. Are you sure?"
+        "This will migrate all existing sim data to the new format with worldData and cards array. This operation cannot be undone. Are you sure?"
       )
     ) {
       migrateAllSimData();
