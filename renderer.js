@@ -652,6 +652,8 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
 
       const currentDate = worldData.current_date || "Unknown Date";
       const currentTime = worldData.current_time || "Unknown Time";
+      const defaultBgColor = worldData.bg || worldData.bgColor || get_settings("defaultBgColor");
+
 
       if (!characterList.length) return;
 
@@ -682,7 +684,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
               );
               return null;
             }
-            const bgColor = stats.bg || get_settings("defaultBgColor");
+            const bgColor = stats.bg || stats.bgColor || defaultBgColor
             
             // Extract dynamic fields for this character
             const dynamicFields = extractDisplayableFields(stats);
@@ -717,7 +719,6 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
           .filter(Boolean); // Remove any null entries
 
         // For tabbed templates, we pass all cards in one data object
-        const defaultBgColor = get_settings("defaultBgColor");
         const templateData = {
           cards: charactersData,
           currentDate: currentDate,

@@ -276,7 +276,7 @@ const extractDisplayableFields = (characterStats) => {
     }
     
     // Only include fields that are numeric stats
-    if (typeof value === 'number' && !excludedFields.has(key)) {
+    if (!excludedFields.has(key) && (typeof value === 'number' || value === "?")) {
       const mapping = generateFieldMapping(key, value, characterStats);
       if (mapping.type === 'stat') {
         fields.push({
