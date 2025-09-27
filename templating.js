@@ -28,6 +28,11 @@ Handlebars.registerHelper("gt", function (a, b) {
   return a > b;
 });
 
+// i really need a bloody or
+Handlebars.registerHelper("or", function (a, b) {
+  return a || b;
+});
+
 Handlebars.registerHelper("divide", function (a, b) {
   if (typeof a !== "number" || typeof b !== "number" || b === 0) {
     return 0;

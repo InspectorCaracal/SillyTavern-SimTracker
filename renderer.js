@@ -46,8 +46,8 @@ function processCharacterDataSync(worldData, characterList) {
     
     if (!enableSync) return; // Skip if sync is not enabled for this character
     
-    // Define keys that should not be synced (display/styling keys)
-    const excludedKeys = ['bg', 'bgColor', 'internal_thought', 'thought', 'last_react', 'health', 'enableDataSync', 'dataSync', 'syncData', 'trackChanges'];
+    // Define keys that should not be synced (display/system keys)
+    const excludedKeys = ['bg', 'bgColor', 'color', 'internal_thought', 'thought', 'last_react', 'enableDataSync', 'dataSync', 'syncData', 'trackChanges'];
     
     // First pass: Process direct value assignments for non-excluded keys
     Object.keys(stats).forEach(key => {
@@ -169,7 +169,7 @@ function processCharacterDataSync(worldData, characterList) {
 
 // Backfill missing base keys with their corresponding global variable values
 function backfillMissingKeys(characterList, withSim) {
-  const retrieveValue = withSim ? getGlobalVariable : (val) => "?";
+  const retrieveValue = withSim ? getGlobalVariable : (varname) => "?";
 
   characterList.forEach(character => {
     const { name, ...stats } = character;
@@ -182,19 +182,14 @@ function backfillMissingKeys(characterList, withSim) {
         // If the base key is missing from the character data
         if (!(baseKey in character)) {
           const variableName = `${name}_${baseKey}`;
+          // Determine data type by the change to apply
+          const isList = stats[key].add || stats[key].remove;
           
           try {
             const storedValue = retrieveValue(variableName);
             
-            if (storedValue !== null && storedValue !== undefined) {
-              // For numeric values, use the stored value directly
-              if (typeof storedValue === 'number') {
-                character[baseKey] = storedValue;
-                console.log(`[SST] [${MODULE_NAME}]`, 
-                  `Backfilled ${baseKey} for ${name} with stored value: ${storedValue}`);
-              }
-              // For list values (stored as JSON strings), parse them
-              else if (typeof storedValue === 'string' && storedValue.startsWith('[')) {
+            if (isList) {
+              if (storedValue) {
                 try {
                   const parsedList = JSON.parse(storedValue);
                   if (Array.isArray(parsedList)) {
@@ -207,12 +202,19 @@ function backfillMissingKeys(characterList, withSim) {
                     `Could not parse stored list for ${baseKey}, skipping backfill`);
                 }
               }
-              // For other stored values, use as-is
               else {
-                character[baseKey] = storedValue;
-                console.log(`[SST] [${MODULE_NAME}]`, 
-                  `Backfilled ${baseKey} for ${name} with stored value: ${storedValue}`);
+                // just represent the changes
+                console.log(stats[key]);
+                character[baseKey] = stats[key].add ? stats[key].add.map(item => '+ '+item) : [];
+                character[baseKey].push(...( stats[key].remove ? stats[key].remove.map(item => '- '+item) : []));
+                console.log(character[baseKey]);
               }
+            }
+            // For other stored values, use as-is
+            else {
+              character[baseKey] = storedValue;
+              console.log(`[SST] [${MODULE_NAME}]`, 
+                `Backfilled ${baseKey} for ${name} with stored value: ${storedValue}`);
             }
           } catch (error) {
             console.error(`[SST] [${MODULE_NAME}]`, 
