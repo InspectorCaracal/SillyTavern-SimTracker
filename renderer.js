@@ -724,6 +724,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
           currentTime: currentTime,
           bgColor: defaultBgColor,
           darkerBgColor: darkenColor(defaultBgColor),
+          worldData: worldData
         };
 
         cardsHtml = compiledCardTemplate(templateData);
