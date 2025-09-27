@@ -48,7 +48,7 @@ function processCharacterDataSync(worldData, characterList) {
   // update world data variables first
   Object.keys(worldData).forEach(key => {
     const variableName = `worldData_${key}`;
-    setGlobalVariable(variableName, worldData[key]);
+    setGlobalVariable(variableName, JSON.stringify(worldData[key]));
   })
 
   characterList.forEach(character => {
