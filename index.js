@@ -502,8 +502,9 @@ cards:
 
     eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (mesId) => {
       // Clear generation in progress flag when message is rendered
+      let withSim = getGenerationInProgress();
       setGenerationInProgress(false);
-      renderTracker(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString);
+      renderTracker(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString, withSim);
     });
     
     eventSource.on(event_types.CHAT_CHANGED, wrappedRefreshAllCards);
@@ -550,6 +551,8 @@ cards:
         }
         element.remove();
       });
+      // set this back on because jhghfjgf
+      setGenerationInProgress(true);
     });
 
     wrappedRefreshAllCards();
