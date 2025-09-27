@@ -4,6 +4,7 @@ import { messageFormatting } from "../../../../script.js";
 import { extractTemplatePosition, currentTemplatePosition } from "./templating.js";
 import { parseTrackerData } from "./formatUtils.js";
 import { extractDisplayableFields, generateDynamicStatsHtml } from "./fieldMapping.js";
+import { getGlobalVariable, setGlobalVariable } from "../../../variables.js";
 
 const MODULE_NAME = "silly-sim-tracker";
 const CONTAINER_ID = "silly-sim-tracker-container";
@@ -26,6 +27,160 @@ const setGenerationInProgress = (value) => {
 const getGenerationInProgress = () => {
   return isGenerationInProgress;
 };
+
+// Process xChange keys for characters with data sync enabled
+function processCharacterDataSync(worldData, characterList) {
+  console.log("[SST] initiating data persist")
+
+  // update world data variables first
+  Object.keys(worldData).forEach(key => {
+    const variableName = `worldData_${key}`;
+    setGlobalVariable(variableName, worldData[key]);
+  })
+
+  characterList.forEach(character => {
+    const { name, ...stats } = character;
+    
+    // Check if the character has data sync enabled (any boolean key that enables sync)
+    const enableSync = stats.enableDataSync || stats.dataSync || stats.syncData || stats.trackChanges;
+    
+    if (!enableSync) return; // Skip if sync is not enabled for this character
+    
+    // Process all xChange keys
+    Object.keys(stats).forEach(key => {
+      if (key.endsWith('Change')) {
+        const baseKey = key.replace('Change', ''); // e.g., 'apChange' -> 'ap'
+        const changeValue = stats[key];
+        const variableName = `${name}_${baseKey}`;
+        
+        try {
+          // Handle numeric changes
+          if (typeof changeValue === 'number' && changeValue !== 0) {
+            // Get current value or initialize to 0
+            const currentValue = getGlobalVariable(variableName) || 0;
+            const newValue = Number(currentValue) + changeValue;
+            
+            // Set the updated value
+            setGlobalVariable(variableName, newValue);
+            
+            console.log(`[SST] [${MODULE_NAME}]`, 
+              `Updated ${variableName}: ${currentValue} + ${changeValue} = ${newValue}`);
+          }
+          // Handle list modifications
+          else if (typeof changeValue === 'object' && changeValue !== null) {
+            // Get current list or initialize to empty array
+            let currentList;
+            try {
+              const currentValue = getGlobalVariable(variableName);
+              currentList = currentValue ? JSON.parse(currentValue) : [];
+              if (!Array.isArray(currentList)) {
+                currentList = [];
+              }
+            } catch (parseError) {
+              console.log(`[SST] [${MODULE_NAME}]`, 
+                `Could not parse existing list for ${variableName}, initializing as empty array`);
+              currentList = [];
+            }
+            
+            let modified = false;
+            
+            // Handle additions
+            if (changeValue.add && Array.isArray(changeValue.add)) {
+              changeValue.add.forEach(item => {
+                if (!currentList.includes(item)) {
+                  currentList.push(item);
+                  modified = true;
+                  console.log(`[SST] [${MODULE_NAME}]`, 
+                    `Added "${item}" to ${variableName}`);
+                }
+              });
+            }
+            
+            // Handle removals
+            if (changeValue.remove && Array.isArray(changeValue.remove)) {
+              changeValue.remove.forEach(item => {
+                const index = currentList.indexOf(item);
+                if (index > -1) {
+                  currentList.splice(index, 1);
+                  modified = true;
+                  console.log(`[SST] [${MODULE_NAME}]`, 
+                    `Removed "${item}" from ${variableName}`);
+                }
+              });
+            }
+            
+            // Save the updated list if it was modified
+            if (modified) {
+              setGlobalVariable(variableName, JSON.stringify(currentList));
+              console.log(`[SST] [${MODULE_NAME}]`, 
+                `Updated list ${variableName}: [${currentList.join(', ')}]`);
+            }
+          }
+        } catch (error) {
+          console.error(`[SST] [${MODULE_NAME}]`, 
+            `Error updating variable ${variableName}:`, error);
+        }
+      }
+    });
+  });
+}
+
+// Backfill missing base keys with their corresponding global variable values
+function backfillMissingKeys(characterList, withSim) {
+  const retrieveValue = withSim ? getGlobalVariable : (val) => "?";
+
+  characterList.forEach(character => {
+    const { name, ...stats } = character;
+    
+    // Find all xChange keys and check if corresponding base keys are missing
+    Object.keys(stats).forEach(key => {
+      if (key.endsWith('Change')) {
+        const baseKey = key.replace('Change', ''); // e.g., 'apChange' -> 'ap'
+        
+        // If the base key is missing from the character data
+        if (!(baseKey in character)) {
+          const variableName = `${name}_${baseKey}`;
+          
+          try {
+            const storedValue = retrieveValue(variableName);
+            
+            if (storedValue !== null && storedValue !== undefined) {
+              // For numeric values, use the stored value directly
+              if (typeof storedValue === 'number') {
+                character[baseKey] = storedValue;
+                console.log(`[SST] [${MODULE_NAME}]`, 
+                  `Backfilled ${baseKey} for ${name} with stored value: ${storedValue}`);
+              }
+              // For list values (stored as JSON strings), parse them
+              else if (typeof storedValue === 'string' && storedValue.startsWith('[')) {
+                try {
+                  const parsedList = JSON.parse(storedValue);
+                  if (Array.isArray(parsedList)) {
+                    character[baseKey] = parsedList;
+                    console.log(`[SST] [${MODULE_NAME}]`, 
+                      `Backfilled ${baseKey} for ${name} with stored list: [${parsedList.join(', ')}]`);
+                  }
+                } catch (parseError) {
+                  console.log(`[SST] [${MODULE_NAME}]`, 
+                    `Could not parse stored list for ${baseKey}, skipping backfill`);
+                }
+              }
+              // For other stored values, use as-is
+              else {
+                character[baseKey] = storedValue;
+                console.log(`[SST] [${MODULE_NAME}]`, 
+                  `Backfilled ${baseKey} for ${name} with stored value: ${storedValue}`);
+              }
+            }
+          } catch (error) {
+            console.error(`[SST] [${MODULE_NAME}]`, 
+              `Error backfilling ${baseKey} for ${name}:`, error);
+          }
+        }
+      }
+    });
+  });
+}
 
 // Helper function to create or update a global left sidebar
 function updateLeftSidebar(content) {
@@ -389,24 +544,12 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
 
     // Handle message formatting (different behavior based on withSim parameter)
     let displayMessage = message.mes;
-    if (withSim) {
-      // renderTracker behavior: hide sim blocks with spans for preprocessing
-      if (get_settings("hideSimBlocks")) {
-        const hideRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
-        displayMessage = displayMessage.replace(
-          hideRegex,
-          (match) => `<span style="display: none !important;">${match}</span>`
-        );
-      }
-    } else {
-      // renderTrackerWithoutSim behavior: hide sim blocks completely
-      if (get_settings("hideSimBlocks")) {
-        const hideRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
-        displayMessage = displayMessage.replace(
-          hideRegex,
-          (match) => `<span style="display: none !important;">${match}</span>`
-        );
-      }
+    if (get_settings("hideSimBlocks")) {
+      const hideRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
+      displayMessage = displayMessage.replace(
+        hideRegex,
+        (match) => `<span style="display: none !important;">${match}</span>`
+      );
     }
 
     // Format and display the message content
@@ -512,6 +655,14 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
 
       if (!characterList.length) return;
 
+      // Integrate globalvar data persistence
+      if (withSim) {
+        // Process xChange keys for data synchronization
+        processCharacterDataSync(worldData, characterList);
+      }
+      // Backfill missing base keys with stored values
+      backfillMissingKeys(characterList, withSim);
+
       // For tabbed templates, we need to pass all cards to the template
       const templateFile = get_settings("templateFile");
       const customTemplateHtml = get_settings("customTemplateHtml");
@@ -566,10 +717,13 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
           .filter(Boolean); // Remove any null entries
 
         // For tabbed templates, we pass all cards in one data object
+        const defaultBgColor = get_settings("defaultBgColor");
         const templateData = {
           cards: charactersData,
           currentDate: currentDate,
           currentTime: currentTime,
+          bgColor: defaultBgColor,
+          darkerBgColor: darkenColor(defaultBgColor),
         };
 
         cardsHtml = compiledCardTemplate(templateData);
@@ -721,5 +875,7 @@ export {
   pendingRightSidebarContent,
   setGenerationInProgress,
   getGenerationInProgress,
+  processCharacterDataSync,
+  backfillMissingKeys,
   CONTAINER_ID
 };
