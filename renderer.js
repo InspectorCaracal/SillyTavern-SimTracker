@@ -202,6 +202,7 @@ function backfillMissingKeys(characterList, withSim) {
             const storedValue = retrieveValue(variableName);
             
             if (isList) {
+              let parsed = false;
               if (storedValue) {
                 try {
                   const parsedList = JSON.parse(storedValue);
@@ -209,17 +210,18 @@ function backfillMissingKeys(characterList, withSim) {
                     character[baseKey] = parsedList;
                     console.log(`[SST] [${MODULE_NAME}]`, 
                       `Backfilled ${baseKey} for ${name} with stored list: [${parsedList.join(', ')}]`);
+                    parsed = true;
                   }
                 } catch (parseError) {
                   console.log(`[SST] [${MODULE_NAME}]`, 
-                    `Could not parse stored list for ${baseKey}, skipping backfill`);
+                    `Could not parse stored list for ${baseKey}`);
                 }
               }
-              else {
+              if (!parsed) {
                 // just represent the changes
                 console.log(stats[key]);
-                character[baseKey] = stats[key].add ? stats[key].add.map(item => '+ '+item) : [];
-                character[baseKey].push(...( stats[key].remove ? stats[key].remove.map(item => '- '+item) : []));
+                character[baseKey] = stats[key].add ? stats[key].add.map(item => { return {'name': item, 'change': 'add'}}) : [];
+                character[baseKey].push(...( stats[key].remove ? stats[key].remove.map(item => { return {'name': item, 'change': 'remove'}}) : []));
                 console.log(character[baseKey]);
               }
             }
