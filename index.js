@@ -16,12 +16,14 @@ import {
   updateLeftSidebar,
   updateRightSidebar,
   removeGlobalSidebars,
-  isGenerationInProgress,
   pendingLeftSidebarContent,
   pendingRightSidebarContent,
   mesTextsWithPreparingText,
   setGenerationInProgress,
   getGenerationInProgress,
+  setGenerationType,
+  getGenerationType,
+  clearGenerationType,
   CONTAINER_ID
 } from "./renderer.js";
 
@@ -80,6 +82,7 @@ globalThis.simTrackerGenInterceptor = async function (
   log(`simTrackerGenInterceptor called with type: ${type}`);
 
   // Note: isGenerationInProgress is managed within the renderer module
+  setGenerationType(type);
 
   // Handle regenerate and swipe conditions to reset last_sim_stats macro
   if (type === "regenerate" || type === "swipe") {
@@ -502,6 +505,10 @@ cards:
 
     eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (mesId) => {
       // Clear generation in progress flag when message is rendered
+      if (getGenerationType() == 'swipe') {
+        clearGenerationType();
+        return;
+      }
       let withSim = getGenerationInProgress();
       setGenerationInProgress(false);
       renderTracker(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString, withSim);

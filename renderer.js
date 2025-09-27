@@ -15,6 +15,7 @@ let globalRightSidebar = null;
 let pendingLeftSidebarContent = null;
 let pendingRightSidebarContent = null;
 let isGenerationInProgress = false;
+let generationType = null;
 
 // Keep track of mesTexts that have preparing text
 const mesTextsWithPreparingText = new Set();
@@ -27,6 +28,18 @@ const setGenerationInProgress = (value) => {
 const getGenerationInProgress = () => {
   return isGenerationInProgress;
 };
+
+const setGenerationType = (value) => {
+  generationType = value;
+}
+
+const getGenerationType = () => {
+  return generationType;
+}
+
+const clearGenerationType = () => {
+  generationType = null;
+}
 
 // Process data synchronization for characters with data sync enabled
 function processCharacterDataSync(worldData, characterList) {
@@ -921,6 +934,9 @@ export {
   pendingRightSidebarContent,
   setGenerationInProgress,
   getGenerationInProgress,
+  setGenerationType,
+  getGenerationType,
+  clearGenerationType,
   processCharacterDataSync,
   backfillMissingKeys,
   CONTAINER_ID
