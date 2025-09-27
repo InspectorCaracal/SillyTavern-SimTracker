@@ -42,7 +42,7 @@ A powerful SillyTavern extension that dynamically renders visually appealing tra
 - **Data Hiding**: Option to hide raw JSON code blocks while keeping the visual cards
 - **Custom Fields Definition**: Define your own data fields for use in templates and prompts
 - **YAML/JSON Format Switching**: Choose between JSON and YAML formats for your tracker blocks with automatic parsing of both formats
-- **xChange Data Synchronization**: Automatically track cumulative stat changes and list modifications in persistent app-data variables when enabled per character, with automatic backfill of missing base values
+- **Data Synchronization**: Automatically synchronize character data to persistent app-data variables when enabled per character, supporting both direct value assignments and incremental changes, with automatic backfill of missing values
 
 ### Template System
 - **Handlebars.js Templates**: Powerful templating engine for creating rich, dynamic cards
@@ -299,6 +299,6 @@ Adds a sim block to the last character message if it doesn't already have one, a
 
 ## Additional Documentation
 
-- **[xChange Data Synchronization](XCHANGE_FEATURE.md)**: Detailed guide on the persistent data tracking feature
+- **[Data Synchronization](XCHANGE_FEATURE.md)**: Detailed guide on the persistent data tracking feature
 
 ---

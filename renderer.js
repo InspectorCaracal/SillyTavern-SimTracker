@@ -28,7 +28,7 @@ const getGenerationInProgress = () => {
   return isGenerationInProgress;
 };
 
-// Process xChange keys for characters with data sync enabled
+// Process data synchronization for characters with data sync enabled
 function processCharacterDataSync(worldData, characterList) {
   console.log("[SST] initiating data persist")
 
@@ -46,79 +46,121 @@ function processCharacterDataSync(worldData, characterList) {
     
     if (!enableSync) return; // Skip if sync is not enabled for this character
     
-    // Process all xChange keys
+    // Define keys that should not be synced (display/styling keys)
+    const excludedKeys = ['bg', 'bgColor', 'internal_thought', 'thought', 'last_react', 'health', 'enableDataSync', 'dataSync', 'syncData', 'trackChanges'];
+    
+    // First pass: Process direct value assignments for non-excluded keys
     Object.keys(stats).forEach(key => {
-      if (key.endsWith('Change')) {
-        const baseKey = key.replace('Change', ''); // e.g., 'apChange' -> 'ap'
-        const changeValue = stats[key];
-        const variableName = `${name}_${baseKey}`;
+      if (!key.endsWith('Change') && !excludedKeys.includes(key)) {
+        const value = stats[key];
+        const variableName = `${name}_${key}`;
         
         try {
-          // Handle numeric changes
-          if (typeof changeValue === 'number' && changeValue !== 0) {
-            // Get current value or initialize to 0
-            const currentValue = getGlobalVariable(variableName) || 0;
-            const newValue = Number(currentValue) + changeValue;
-            
-            // Set the updated value
-            setGlobalVariable(variableName, newValue);
-            
+          // Handle numeric values
+          if (typeof value === 'number') {
+            setGlobalVariable(variableName, value);
             console.log(`[SST] [${MODULE_NAME}]`, 
-              `Updated ${variableName}: ${currentValue} + ${changeValue} = ${newValue}`);
+              `Set ${variableName} to: ${value}`);
           }
-          // Handle list modifications
-          else if (typeof changeValue === 'object' && changeValue !== null) {
-            // Get current list or initialize to empty array
-            let currentList;
-            try {
-              const currentValue = getGlobalVariable(variableName);
-              currentList = currentValue ? JSON.parse(currentValue) : [];
-              if (!Array.isArray(currentList)) {
-                currentList = [];
-              }
-            } catch (parseError) {
-              console.log(`[SST] [${MODULE_NAME}]`, 
-                `Could not parse existing list for ${variableName}, initializing as empty array`);
-              currentList = [];
-            }
-            
-            let modified = false;
-            
-            // Handle additions
-            if (changeValue.add && Array.isArray(changeValue.add)) {
-              changeValue.add.forEach(item => {
-                if (!currentList.includes(item)) {
-                  currentList.push(item);
-                  modified = true;
-                  console.log(`[SST] [${MODULE_NAME}]`, 
-                    `Added "${item}" to ${variableName}`);
-                }
-              });
-            }
-            
-            // Handle removals
-            if (changeValue.remove && Array.isArray(changeValue.remove)) {
-              changeValue.remove.forEach(item => {
-                const index = currentList.indexOf(item);
-                if (index > -1) {
-                  currentList.splice(index, 1);
-                  modified = true;
-                  console.log(`[SST] [${MODULE_NAME}]`, 
-                    `Removed "${item}" from ${variableName}`);
-                }
-              });
-            }
-            
-            // Save the updated list if it was modified
-            if (modified) {
-              setGlobalVariable(variableName, JSON.stringify(currentList));
-              console.log(`[SST] [${MODULE_NAME}]`, 
-                `Updated list ${variableName}: [${currentList.join(', ')}]`);
-            }
+          // Handle arrays/lists
+          else if (Array.isArray(value)) {
+            setGlobalVariable(variableName, JSON.stringify(value));
+            console.log(`[SST] [${MODULE_NAME}]`, 
+              `Set list ${variableName} to: [${value.join(', ')}]`);
+          }
+          // Handle other values (strings, etc.)
+          else if (value !== null && value !== undefined) {
+            setGlobalVariable(variableName, value);
+            console.log(`[SST] [${MODULE_NAME}]`, 
+              `Set ${variableName} to: ${value}`);
           }
         } catch (error) {
           console.error(`[SST] [${MODULE_NAME}]`, 
-            `Error updating variable ${variableName}:`, error);
+            `Error setting variable ${variableName}:`, error);
+        }
+      }
+    });
+    
+    // Second pass: Process xChange keys only if their base key is NOT present
+    Object.keys(stats).forEach(key => {
+      if (key.endsWith('Change')) {
+        const baseKey = key.replace('Change', ''); // e.g., 'apChange' -> 'ap'
+        
+        // Only process the change if the base key is NOT present in the data
+        if (!(baseKey in character)) {
+          const changeValue = stats[key];
+          const variableName = `${name}_${baseKey}`;
+          
+          try {
+            // Handle numeric changes
+            if (typeof changeValue === 'number' && changeValue !== 0) {
+              // Get current value or initialize to 0
+              const currentValue = getGlobalVariable(variableName) || 0;
+              const newValue = Number(currentValue) + changeValue;
+              
+              // Set the updated value
+              setGlobalVariable(variableName, newValue);
+              
+              console.log(`[SST] [${MODULE_NAME}]`, 
+                `Updated ${variableName}: ${currentValue} + ${changeValue} = ${newValue}`);
+            }
+            // Handle list modifications
+            else if (typeof changeValue === 'object' && changeValue !== null) {
+              // Get current list or initialize to empty array
+              let currentList;
+              try {
+                const currentValue = getGlobalVariable(variableName);
+                currentList = currentValue ? JSON.parse(currentValue) : [];
+                if (!Array.isArray(currentList)) {
+                  currentList = [];
+                }
+              } catch (parseError) {
+                console.log(`[SST] [${MODULE_NAME}]`, 
+                  `Could not parse existing list for ${variableName}, initializing as empty array`);
+                currentList = [];
+              }
+              
+              let modified = false;
+              
+              // Handle additions
+              if (changeValue.add && Array.isArray(changeValue.add)) {
+                changeValue.add.forEach(item => {
+                  if (!currentList.includes(item)) {
+                    currentList.push(item);
+                    modified = true;
+                    console.log(`[SST] [${MODULE_NAME}]`, 
+                      `Added "${item}" to ${variableName}`);
+                  }
+                });
+              }
+              
+              // Handle removals
+              if (changeValue.remove && Array.isArray(changeValue.remove)) {
+                changeValue.remove.forEach(item => {
+                  const index = currentList.indexOf(item);
+                  if (index > -1) {
+                    currentList.splice(index, 1);
+                    modified = true;
+                    console.log(`[SST] [${MODULE_NAME}]`, 
+                      `Removed "${item}" from ${variableName}`);
+                  }
+                });
+              }
+              
+              // Save the updated list if it was modified
+              if (modified) {
+                setGlobalVariable(variableName, JSON.stringify(currentList));
+                console.log(`[SST] [${MODULE_NAME}]`, 
+                  `Updated list ${variableName}: [${currentList.join(', ')}]`);
+              }
+            }
+          } catch (error) {
+            console.error(`[SST] [${MODULE_NAME}]`, 
+              `Error updating variable ${variableName}:`, error);
+          }
+        } else {
+          console.log(`[SST] [${MODULE_NAME}]`, 
+            `Skipping ${key} because ${baseKey} is present in data`);
         }
       }
     });
