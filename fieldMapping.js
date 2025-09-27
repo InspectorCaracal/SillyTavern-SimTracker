@@ -274,6 +274,11 @@ const extractDisplayableFields = (characterStats) => {
     if (key.endsWith('Icon') || key.endsWith('_icon') || key.startsWith('icon_') || key === 'icons') {
       return;
     }
+
+    // Skip "hidden" fields
+    if (key.endsWith("Hidden")) {
+      return;
+    }
     
     // Only include fields that are numeric stats
     if (!excludedFields.has(key) && (typeof value === 'number' || value === "?")) {

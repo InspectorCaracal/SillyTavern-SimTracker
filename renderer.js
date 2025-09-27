@@ -726,7 +726,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
               );
               return null;
             }
-            const bgColor = stats.bg || stats.bgColor || defaultBgColor
+            const bgColor = stats.bg || stats.bgColor || stats.color || defaultBgColor
             
             // Extract dynamic fields for this character
             const dynamicFields = extractDisplayableFields(stats);

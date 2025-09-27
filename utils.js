@@ -11,7 +11,13 @@ const log = (message) => console.log(`[SST] [${MODULE_NAME}]`, message);
 const sanitizeFieldKey = (key) => key.replace(/\s+/g, "_");
 
 const darkenColor = (hex) => {
-  if (!hex || hex.length < 7) return "#6a5acd";
+  if (!hex || !/^#([a-fA-F0-9]{3}|[a-fA-F0-9]{6})$/.test(hex)) return hex;
+  
+  // Expand short-form (#f63) to long-form (#ff6633)
+  if (hex.length === 4) {
+    hex = "#" + hex.slice(1).split("").map((c) => c + c).join("");
+  }
+  
   let r = parseInt(hex.slice(1, 3), 16),
     g = parseInt(hex.slice(3, 5), 16),
     b = parseInt(hex.slice(5, 7), 16);
