@@ -5,7 +5,15 @@
 //   1. Field + "Icon": { "ap": 50, "apIcon": "💖" }
 //   2. Field + "_icon": { "ap": 50, "ap_icon": "💖" }
 //   3. "icon_" + Field: { "ap": 50, "icon_ap": "💖" }
-//   4. Icons object: { "ap": 50, "icons": { "ap": "💖" } }
+//   4. Character-level icons object: { "ap": 50, "icons": { "ap": "💖" } }
+//   5. World-level icons object (shared across all characters): 
+//      worldData: { "icons": { "ap": "💖", "dp": "🌸" } }
+//
+// Priority order for icon resolution:
+//   1. Character-specific icons object (character.icons.fieldName)
+//   2. World-level icons object (worldData.icons.fieldName) 
+//   3. Character-specific field+Icon keys (character.fieldNameIcon)
+//   4. Default pattern-based icons
 //
 // Examples:
 //   ```yaml
@@ -25,6 +33,23 @@
 //     ap: 💖
 //     dp: 🌸
 //     energy: ⚡
+//   ```
+//
+//   ```yaml
+//   worldData:
+//     icons:
+//       ap: 💖
+//       dp: 🌸
+//       energy: ⚡
+//   cards:
+//     - name: "Alice"
+//       ap: 50
+//       dp: 75
+//       energy: 80
+//     - name: "Bob"  
+//       ap: 30
+//       dp: 60
+//       energy: 90
 //   ```
 
 const MODULE_NAME = "silly-sim-tracker";
@@ -104,10 +129,11 @@ const DEFAULT_FIELD_MAPPING = {
  * Generate display information for a field based on its key and value
  * @param {string} fieldKey - The field key from the JSON data
  * @param {*} fieldValue - The field value from the JSON data
- * @param {Object} allData - All the character data to check for custom icons
+ * @param {Object} characterData - The character data to check for custom icons
+ * @param {Object} worldData - The world data to check for shared custom icons
  * @returns {Object} Display information with displayName, icon, type, etc.
  */
-const generateFieldMapping = (fieldKey, fieldValue, allData = {}) => {
+const generateFieldMapping = (fieldKey, fieldValue, characterData = {}, worldData = {}) => {
   // Check if we have a predefined mapping
   let mapping = DEFAULT_FIELD_MAPPING[fieldKey] ? 
     { ...DEFAULT_FIELD_MAPPING[fieldKey], key: fieldKey } : null;
@@ -122,14 +148,20 @@ const generateFieldMapping = (fieldKey, fieldValue, allData = {}) => {
     `icons.${fieldKey}`,         // icons.ap (if passed as key)
   ];
   
-  // Also check if there's a general icons object
-  if (allData.icons && typeof allData.icons === 'object' && allData.icons[fieldKey]) {
-    customIcon = allData.icons[fieldKey];
-  } else {
-    // Check each possible icon key
+  // First check character-specific icons object
+  if (characterData.icons && typeof characterData.icons === 'object' && characterData.icons[fieldKey]) {
+    customIcon = characterData.icons[fieldKey];
+  }
+  // Then check worldData icons object for shared icons
+  else if (worldData.icons && typeof worldData.icons === 'object' && worldData.icons[fieldKey]) {
+    customIcon = worldData.icons[fieldKey];
+  }
+  // Finally check character-specific icon keys
+  else {
+    // Check each possible icon key in character data
     for (const iconKey of iconKeys) {
-      if (allData[iconKey]) {
-        customIcon = allData[iconKey];
+      if (characterData[iconKey]) {
+        customIcon = characterData[iconKey];
         break;
       }
     }
@@ -251,9 +283,10 @@ const generateFieldMapping = (fieldKey, fieldValue, allData = {}) => {
 /**
  * Extract and map all stat fields from character data
  * @param {Object} characterStats - The character's stats object
+ * @param {Object} worldData - The world data object for shared icons
  * @returns {Array} Array of field mappings for displayable stats
  */
-const extractDisplayableFields = (characterStats) => {
+const extractDisplayableFields = (characterStats, worldData = {}) => {
   const fields = [];
   const excludedFields = new Set([
     'name', 'internal_thought', 'thought', 'relationshipStatus', 'desireStatus', 
@@ -282,7 +315,7 @@ const extractDisplayableFields = (characterStats) => {
     
     // Only include fields that are numeric stats
     if (!excludedFields.has(key) && (typeof value === 'number' || value === "?")) {
-      const mapping = generateFieldMapping(key, value, characterStats);
+      const mapping = generateFieldMapping(key, value, characterStats, worldData);
       if (mapping.type === 'stat') {
         fields.push({
           ...mapping,

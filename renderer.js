@@ -746,7 +746,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
             const bgColor = stats.bg || stats.bgColor || stats.color || defaultBgColor
             
             // Extract dynamic fields for this character
-            const dynamicFields = extractDisplayableFields(stats);
+            const dynamicFields = extractDisplayableFields(stats, worldData);
             const dynamicStatsHtml = generateDynamicStatsHtml(dynamicFields);
             
             return {
@@ -802,7 +802,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
             const bgColor = stats.bg || get_settings("defaultBgColor");
             
             // Extract dynamic fields for this character
-            const dynamicFields = extractDisplayableFields(stats);
+            const dynamicFields = extractDisplayableFields(stats, worldData);
             const dynamicStatsHtml = generateDynamicStatsHtml(dynamicFields);
             
             const cardData = {

@@ -148,7 +148,38 @@ cards:
     icon_dp: 🌸        # prefix format
 ```
 
-Custom icons override the default icons for any field, allowing you to personalize your tracker cards with any emoji you prefer. If no custom icon is specified, the extension will use its intelligent pattern-matching system to assign appropriate default icons based on the field name.
+**Format 4: Shared World-Level Icons**
+```yaml
+worldData:
+  current_date: "2025-08-10"
+  current_time: "14:30"
+  icons:
+    ap: 💖
+    dp: 🌸
+    energy: ⚡
+    trust: 🤝
+cards:
+  - name: "Alice"
+    ap: 75
+    dp: 60
+    energy: 80
+    trust: 90
+  - name: "Bob"
+    ap: 30
+    dp: 45
+    energy: 70
+    trust: 85
+```
+
+Custom icons override the default icons for any field, allowing you to personalize your tracker cards with any emoji you prefer. 
+
+**Icon Priority Order:**
+1. Character-specific `icons` object (highest priority)
+2. World-level `icons` object (shared across all characters)
+3. Character-specific field+Icon naming (e.g., `apIcon`, `ap_icon`)
+4. Default pattern-based icons (lowest priority)
+
+This system allows you to define shared icons in `worldData.icons` that apply to all characters, while still allowing individual characters to override specific icons if needed. If no custom icon is specified, the extension will use its intelligent pattern-matching system to assign appropriate default icons based on the field name.
 
 ## Usage Examples
 
