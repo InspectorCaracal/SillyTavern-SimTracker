@@ -241,6 +241,126 @@ function backfillMissingKeys(characterList, withSim) {
   });
 }
 
+// Helper function to build template context data for characters
+function buildTemplateContext(characterList, worldData, templateConfig) {
+  const { 
+    currentDate, 
+    currentTime, 
+    defaultBgColor, 
+    darkenColor, 
+    getReactionEmoji, 
+    get_settings,
+    extractDisplayableFields,
+    generateDynamicStatsHtml,
+    isTabbedTemplate
+  } = templateConfig;
+
+  if (isTabbedTemplate) {
+    // Prepare data for all cards in tabbed format
+    const charactersData = characterList
+      .map((character, index) => {
+        const stats = character;
+        const name = character.name;
+        if (!stats) {
+          console.log(`[SST] [${MODULE_NAME}]`,
+            `No stats found for character "${name}". Skipping card.`
+          );
+          return null;
+        }
+        const bgColor = stats.bg || stats.bgColor || stats.color || defaultBgColor;
+        
+        // Extract dynamic fields for this character
+        const dynamicFields = extractDisplayableFields(stats, worldData);
+        const dynamicStatsHtml = generateDynamicStatsHtml(dynamicFields);
+        
+        return {
+          characterName: name,
+          currentDate: currentDate,
+          currentTime: currentTime,
+          stats: {
+            ...stats,
+            internal_thought:
+              stats.internal_thought ||
+              stats.thought ||
+              "No thought recorded.",
+            relationshipStatus:
+              stats.relationshipStatus || "Unknown Status",
+            desireStatus: stats.desireStatus || "Unknown Desire",
+            inactive: stats.inactive || false,
+            inactiveReason: stats.inactiveReason || 0,
+          },
+          bgColor: bgColor,
+          darkerBgColor: darkenColor(bgColor),
+          reactionEmoji: getReactionEmoji(stats.last_react),
+          healthIcon:
+            stats.health === 1 ? "🤕" : stats.health === 2 ? "💀" : null,
+          showThoughtBubble: get_settings("showThoughtBubble"),
+          dynamicFields: dynamicFields,
+          dynamicStatsHtml: dynamicStatsHtml,
+          cardIndex: index,
+          isActive: index === 0 ? "active" : "",
+          ariaSelected: index === 0 ? "true" : "false"
+        };
+      })
+      .filter(Boolean); // Remove any null entries
+
+    // Return template data for tabbed templates
+    return {
+      cards: charactersData,
+      currentDate: currentDate,
+      currentTime: currentTime,
+      bgColor: defaultBgColor,
+      darkerBgColor: darkenColor(defaultBgColor),
+      worldData: worldData
+    };
+  } else {
+    // For non-tabbed templates, return an array of individual card data
+    return characterList
+      .map((character) => {
+        const stats = character;
+        const name = character.name;
+        if (!stats) {
+          console.log(`[SST] [${MODULE_NAME}]`,
+            `No stats found for character "${name}". Skipping card.`
+          );
+          return null;
+        }
+        const bgColor = stats.bg || stats.bgColor || stats.color || defaultBgColor;
+        
+        // Extract dynamic fields for this character
+        const dynamicFields = extractDisplayableFields(stats, worldData);
+        const dynamicStatsHtml = generateDynamicStatsHtml(dynamicFields);
+        
+        return {
+          characterName: name,
+          currentDate: currentDate,
+          currentTime: currentTime,
+          stats: {
+            ...stats,
+            internal_thought:
+              stats.internal_thought ||
+              stats.thought ||
+              "No thought recorded.",
+            relationshipStatus:
+              stats.relationshipStatus || "Unknown Status",
+            desireStatus: stats.desireStatus || "Unknown Desire",
+            inactive: stats.inactive || false,
+            inactiveReason: stats.inactiveReason || 0,
+          },
+          bgColor: bgColor,
+          darkerBgColor: darkenColor(bgColor),
+          reactionEmoji: getReactionEmoji(stats.last_react),
+          healthIcon:
+            stats.health === 1 ? "🤕" : stats.health === 2 ? "💀" : null,
+          showThoughtBubble: get_settings("showThoughtBubble"),
+          dynamicFields: dynamicFields,
+          dynamicStatsHtml: dynamicStatsHtml,
+        };
+      })
+      .filter(Boolean); // Remove any null entries
+  }
+}
+
 // Helper function to create or update a global left sidebar
 function updateLeftSidebar(content) {
   // If generation is in progress, store the content for later
@@ -793,108 +913,29 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
                                (customTemplateHtml && customTemplateHtml.includes("sim-tracker-tabs")) ||
                                (customTemplateHtml && customTemplateHtml.includes("{{#each cards}}"));
 
+      // Build template configuration for the helper
+      const templateConfig = {
+        currentDate,
+        currentTime,
+        defaultBgColor,
+        darkenColor,
+        getReactionEmoji,
+        get_settings,
+        extractDisplayableFields,
+        generateDynamicStatsHtml,
+        isTabbedTemplate
+      };
+
       let cardsHtml = "";
       if (isTabbedTemplate) {
-        // Prepare data for all cards
-        const charactersData = characterList
-          .map((character, index) => {
-            const stats = character;
-            const name = character.name;
-            if (!stats) {
-              console.log(`[SST] [${MODULE_NAME}]`,
-                `No stats found for character "${name}" in message ID ${mesId}. Skipping card.`
-              );
-              return null;
-            }
-            const bgColor = stats.bg || stats.bgColor || stats.color || defaultBgColor
-            
-            // Extract dynamic fields for this character
-            const dynamicFields = extractDisplayableFields(stats, worldData);
-            const dynamicStatsHtml = generateDynamicStatsHtml(dynamicFields);
-            
-            return {
-              characterName: name,
-              currentDate: currentDate,
-              currentTime: currentTime,
-              stats: {
-                ...stats,
-                internal_thought:
-                  stats.internal_thought ||
-                  stats.thought ||
-                  "No thought recorded.",
-                relationshipStatus:
-                  stats.relationshipStatus || "Unknown Status",
-                desireStatus: stats.desireStatus || "Unknown Desire",
-                inactive: stats.inactive || false,
-                inactiveReason: stats.inactiveReason || 0,
-              },
-              bgColor: bgColor,
-              darkerBgColor: darkenColor(bgColor),
-              reactionEmoji: getReactionEmoji(stats.last_react),
-              healthIcon:
-                stats.health === 1 ? "🤕" : stats.health === 2 ? "💀" : null,
-              showThoughtBubble: get_settings("showThoughtBubble"),
-              dynamicFields: dynamicFields,
-              dynamicStatsHtml: dynamicStatsHtml,
-            };
-          })
-          .filter(Boolean); // Remove any null entries
-
-        // For tabbed templates, we pass all cards in one data object
-        const templateData = {
-          cards: charactersData,
-          currentDate: currentDate,
-          currentTime: currentTime,
-          bgColor: defaultBgColor,
-          darkerBgColor: darkenColor(defaultBgColor),
-          worldData: worldData
-        };
-
+        // Use helper to build template context
+        const templateData = buildTemplateContext(characterList, worldData, templateConfig);
         cardsHtml = compiledCardTemplate(templateData);
       } else {
-        cardsHtml = characterList
-          .map((character) => {
-            const stats = character;
-            const name = character.name;
-            if (!stats) {
-              console.log(`[SST] [${MODULE_NAME}]`,
-                `No stats found for character "${name}" in message ID ${mesId}. Skipping card.`
-              );
-              return "";
-            }
-            const bgColor = stats.bg || get_settings("defaultBgColor");
-            
-            // Extract dynamic fields for this character
-            const dynamicFields = extractDisplayableFields(stats, worldData);
-            const dynamicStatsHtml = generateDynamicStatsHtml(dynamicFields);
-            
-            const cardData = {
-              characterName: name,
-              currentDate: currentDate,
-              currentTime: currentTime,
-              stats: {
-                ...stats,
-                internal_thought:
-                  stats.internal_thought ||
-                  stats.thought ||
-                  "No thought recorded.",
-                relationshipStatus:
-                  stats.relationshipStatus || "Unknown Status",
-                desireStatus: stats.desireStatus || "Unknown Desire",
-                inactive: stats.inactive || false,
-                inactiveReason: stats.inactiveReason || 0,
-              },
-              bgColor: bgColor,
-              darkerBgColor: darkenColor(bgColor),
-              reactionEmoji: getReactionEmoji(stats.last_react),
-              healthIcon:
-                stats.health === 1 ? "🤕" : stats.health === 2 ? "💀" : null,
-              showThoughtBubble: get_settings("showThoughtBubble"),
-              dynamicFields: dynamicFields,
-              dynamicStatsHtml: dynamicStatsHtml,
-            };
-            return compiledCardTemplate(cardData);
-          })
+        // Use helper to get individual card data
+        const cardDataArray = buildTemplateContext(characterList, worldData, templateConfig);
+        cardsHtml = cardDataArray
+          .map(cardData => compiledCardTemplate(cardData))
           .join("");
       }
 
@@ -976,84 +1017,43 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
                 if (index < simBlocksData.length) {
                   // Get data for this specific sim block
                   const blockData = simBlocksData[index];
-                  const blockWorldData = blockData.worldData;
-                  const blockCharacters = blockData.characters;
+                  const blockCharacters = blockData.cards; // Use 'cards' instead of 'characters'
                   
                   console.log(`[SST] [${MODULE_NAME}]`, `Creating card for placeholder ${index} with ${blockCharacters.length} characters`);
                   
                   // Process character data for this block only
                   if (blockCharacters.length > 0) {
                     if (withSim) {
-                      processCharacterDataSync(blockWorldData, blockCharacters);
+                      // Use merged world data for processing, not just block data
+                      processCharacterDataSync(worldData, blockCharacters);
                     }
                     backfillMissingKeys(blockCharacters, withSim);
                     
-                    // Create cards HTML for this block's characters
+                    // Build template configuration - use merged world data for complete context  
+                    const blockTemplateConfig = {
+                      currentDate,
+                      currentTime,
+                      defaultBgColor,
+                      darkenColor,
+                      getReactionEmoji,
+                      get_settings,
+                      extractDisplayableFields,
+                      generateDynamicStatsHtml,
+                      isTabbedTemplate
+                    };
+                    
+                    // Use the helper function to create consistent context
                     let blockCardsHtml = "";
                     if (isTabbedTemplate) {
-                      const blockCharactersData = blockCharacters
-                        .map((character, charIndex) => {
-                          const stats = character;
-                          const name = character.name;
-                          if (!stats) return null;
-                          const bgColor = stats.bg || stats.bgColor || stats.color || defaultBgColor;
-                          
-                          // Extract dynamic fields for this character (same as main logic)
-                          const dynamicFields = extractDisplayableFields(stats, blockWorldData);
-                          const dynamicStatsHtml = generateDynamicStatsHtml(dynamicFields);
-                          
-                          return {
-                            characterName: name, // Use characterName instead of name for template compatibility
-                            currentDate: currentDate,
-                            currentTime: currentTime,
-                            stats: {
-                              ...stats,
-                              internal_thought: stats.internal_thought || stats.thought || "No thought recorded.",
-                              relationshipStatus: stats.relationshipStatus || "Unknown Status",
-                              desireStatus: stats.desireStatus || "Unknown Desire",
-                              inactive: stats.inactive || false,
-                              inactiveReason: stats.inactiveReason || 0,
-                            },
-                            bgColor: bgColor,
-                            darkerBgColor: darkenColor(bgColor),
-                            dynamicFields: dynamicFields,
-                            dynamicStatsHtml: dynamicStatsHtml,
-                            cardIndex: charIndex,
-                            isActive: charIndex === 0 ? "active" : "",
-                            ariaSelected: charIndex === 0 ? "true" : "false"
-                          };
-                        })
-                        .filter(char => char !== null);
-                      
-                      const blockTemplateData = {
-                        cards: blockCharactersData,
-                        currentDate: currentDate,
-                        currentTime: currentTime,
-                        bgColor: defaultBgColor,
-                        darkerBgColor: darkenColor(defaultBgColor),
-                        worldData: blockWorldData
-                      };
-                      
+                      const blockTemplateData = buildTemplateContext(blockCharacters, worldData, blockTemplateConfig);
                       console.log(`[SST] [${MODULE_NAME}]`, `Block template data for placeholder ${index}:`, JSON.stringify(blockTemplateData, null, 2));
                       blockCardsHtml = compiledCardTemplate(blockTemplateData);
                     } else {
-                      blockCardsHtml = blockCharacters
-                        .map((character) => {
-                          const name = character.name;
-                          const stats = character;
-                          if (!stats) return "";
-                          
-                          // For non-tabbed templates, use the original simple structure
-                          const templateData = { 
-                            characterName: name, // Use characterName for consistency
-                            name: name, // Keep name for backward compatibility 
-                            stats: JSON.stringify(stats),
-                            currentDate: currentDate,
-                            currentTime: currentTime,
-                            bgColor: stats.bg || stats.bgColor || stats.color || defaultBgColor
-                          };
-                          console.log(`[SST] [${MODULE_NAME}]`, `Non-tabbed template data for ${name}:`, JSON.stringify(templateData, null, 2));
-                          return compiledCardTemplate(templateData);
+                      const blockCardDataArray = buildTemplateContext(blockCharacters, worldData, blockTemplateConfig);
+                      blockCardsHtml = blockCardDataArray
+                        .map(cardData => {
+                          console.log(`[SST] [${MODULE_NAME}]`, `Non-tabbed template data for ${cardData.characterName}:`, JSON.stringify(cardData, null, 2));
+                          return compiledCardTemplate(cardData);
                         })
                         .join("");
                     }
@@ -1096,6 +1096,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
               }
             }
             
+            const finalHtmlInline = compiledWrapperTemplate({ cardsHtml });
             if (lastSimBlock) {
               lastSimBlock.insertAdjacentHTML("afterend", finalHtmlInline);
             } else {
@@ -1104,6 +1105,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
             }
           } else {
             // No sim blocks found, insert at the end
+            const finalHtmlInline = compiledWrapperTemplate({ cardsHtml });
             messageElement.insertAdjacentHTML("beforeend", finalHtmlInline);
           }
           break;
@@ -1170,5 +1172,6 @@ export {
   clearGenerationType,
   processCharacterDataSync,
   backfillMissingKeys,
+  buildTemplateContext,
   CONTAINER_ID
 };
