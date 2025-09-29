@@ -27,13 +27,13 @@ const parseYaml = (yamlContent) => {
   try {
     // This is a simplified YAML parser for our specific use case
     // A full implementation would use a library like js-yaml
-    const lines = yamlContent.trim().split('');
+    const lines = yamlContent.trim().split('\n');
     const result = {};
     let currentObject = result;
     const stack = [result];
     let inArray = false;
     let currentArray = null;
-    let currentArrayParent = null;
+    let pendingArrayKey = null; // Key that should receive the next array
     
     lines.forEach(line => {
       // Skip empty lines and comments
@@ -45,17 +45,18 @@ const parseYaml = (yamlContent) => {
       
       // Handle array items (lines starting with -)
       if (trimmedLine.startsWith('- ')) {
-        // This is an array item
+        // If we have a pending array key and we're not already in an array, start one
         if (!inArray) {
-          // Start a new array
           inArray = true;
           currentArray = [];
-          // Add array to parent
           const parent = stack[stack.length - 1];
-          // Find the key that should contain this array
-          // This is a simplification - in real YAML the array would be associated with a key
-          // For our purposes, we'll assume it's for the cards field
-          parent.cards = currentArray;
+          if (pendingArrayKey) {
+            parent[pendingArrayKey] = currentArray;
+            pendingArrayKey = null;
+          } else {
+            // Fallback: assume it's cards if no pending key
+            parent.cards = currentArray;
+          }
         }
         
         // Extract the content after "- "
@@ -69,7 +70,7 @@ const parseYaml = (yamlContent) => {
           stack.push(newItem);
         } else if (itemContent.includes(':')) {
           // This is a key-value pair in an array item
-          // For simplicity, we'll create a new object for this array item if we don't have one
+          // Create a new object for this array item if we don't have one
           if (currentArray.length === 0 || typeof currentArray[currentArray.length - 1] !== 'object') {
             const newItem = {};
             if (currentArray.length > 0 && typeof currentArray[currentArray.length - 1] !== 'object') {
@@ -109,6 +110,15 @@ const parseYaml = (yamlContent) => {
         }
       }
       
+      // If we have a pending array key but this isn't an array item, create a nested object instead
+      if (pendingArrayKey && !trimmedLine.startsWith('- ')) {
+        const parent = stack[stack.length - 1];
+        const newObject = {};
+        parent[pendingArrayKey] = newObject;
+        stack.push(newObject);
+        pendingArrayKey = null;
+      }
+      
       // Adjust stack based on indentation
       while (stack.length > (indent / 2) + 1) {
         stack.pop();
@@ -123,11 +133,12 @@ const parseYaml = (yamlContent) => {
         const key = parts[0].trim().replace(/["']/g, '');
         const value = parts.slice(1).join(':').trim();
         
-        // Handle nested objects
+        // Handle nested objects or arrays
         if (value === '') {
-          const newObject = {};
-          currentObject[key] = newObject;
-          stack.push(newObject);
+          // This could be a nested object or an array
+          // We'll mark this key as potentially receiving an array
+          pendingArrayKey = key;
+          // Don't create an object yet, wait to see if it's an array
         } else {
           // Handle different value types
           if (value === 'true' || value === 'false') {
