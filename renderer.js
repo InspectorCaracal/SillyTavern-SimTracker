@@ -731,7 +731,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
           if (currentTemplatePosition === "INLINE") {
             simBlocksData.push({
               worldData: blockWorldData,
-              characters: blockCharacterList || []
+              cards: blockCharacterList || []
             });
           }
 
@@ -773,8 +773,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
 
       const currentDate = worldData.current_date || "Unknown Date";
       const currentTime = worldData.current_time || "Unknown Time";
-      const defaultBgColor = worldData.bg || worldData.bgColor || get_settings("defaultBgColor");
-
+      const defaultBgColor = worldData.bg || worldData.bgColor || worldData.color || get_settings("defaultBgColor");
 
       if (!characterList.length) return;
 
@@ -1028,6 +1027,10 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
                       
                       const blockTemplateData = {
                         cards: blockCharactersData,
+                        currentDate: currentDate,
+                        currentTime: currentTime,
+                        bgColor: defaultBgColor,
+                        darkerBgColor: darkenColor(defaultBgColor),
                         worldData: blockWorldData
                       };
                       
