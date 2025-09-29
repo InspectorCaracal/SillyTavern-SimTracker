@@ -82,7 +82,7 @@ const default_settings = {
   customFields: [...defaultSimFields], // Clone the default fields
   hideSimBlocks: true, // New setting to hide sim blocks in message text
   userPresets: [], // New setting to store user presets
-  trackerFormat: "json", // New setting for tracker format (json or yaml)
+  trackerFormat: "auto", // New setting for tracker format (auto, json, or yaml)
 };
 
 let settings = {};

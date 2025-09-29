@@ -1,6 +1,6 @@
 // utils.js - Miscellaneous helper functions
 import { getContext } from "../../../extensions.js";
-import { parseTrackerData, generateTrackerBlock } from "./formatUtils.js";
+import { parseTrackerData, generateTrackerBlock, detectFormat } from "./formatUtils.js";
 
 const MODULE_NAME = "silly-sim-tracker";
 
@@ -242,7 +242,15 @@ const migrateAllSimData = async (get_settings) => {
             const migratedData = migrateJsonFormat(jsonData);
 
             // Convert back to the user's preferred format
-            const format = get_settings("trackerFormat") || "json";
+            const userFormat = get_settings("trackerFormat") || "auto";
+            // For migration, if auto is selected, try to preserve the original format
+            let format;
+            if (userFormat === "auto") {
+              // Try to detect the original format and preserve it, default to JSON
+              format = detectFormat(content) || "json";
+            } else {
+              format = userFormat;
+            }
             const migratedCodeBlock = generateTrackerBlock(migratedData, format, identifier);
 
             // Replace in message

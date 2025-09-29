@@ -240,8 +240,8 @@ jQuery(async () => {
           const targetFormat = args && args.length > 0 ? args[0].toLowerCase() : null;
           
           // Validate format parameter
-          if (targetFormat && targetFormat !== "json" && targetFormat !== "yaml") {
-            return "Invalid format specified. Use 'json' or 'yaml'.";
+          if (targetFormat && targetFormat !== "json" && targetFormat !== "yaml" && targetFormat !== "auto") {
+            return "Invalid format specified. Use 'json', 'yaml', or 'auto'.";
           }
           
           let message = "This will convert all sim data in the current chat to the new format.";
@@ -265,7 +265,7 @@ jQuery(async () => {
           {
             name: "format",
             type: "string",
-            description: "Target format (json or yaml). If not specified, uses current setting.",
+            description: "Target format (json, yaml, or auto). If not specified, uses current setting.",
             optional: true,
           },
         ],
@@ -289,6 +289,10 @@ jQuery(async () => {
                             <pre><code class="language-stscript">/sst-convert yaml</code></pre>
                             Converts all sim data to YAML format
                         </li>
+                        <li>
+                            <pre><code class="language-stscript">/sst-convert auto</code></pre>
+                            Sets the tracker format to auto-detect and migrates data
+                        </li>
                     </ul>
                 </div>
             `,
@@ -298,7 +302,9 @@ jQuery(async () => {
     MacrosParser.registerMacro("sim_format", () => {
       if (!get_settings("isEnabled")) return "";
       const fields = get_settings("customFields") || [];
-      const format = get_settings("trackerFormat") || "json";
+      const userFormat = get_settings("trackerFormat") || "auto";
+      // For generation, default to JSON when auto is selected
+      const format = userFormat === "auto" ? "json" : userFormat;
       log("Processed {{sim_format}} macro.");
 
       if (format === "yaml") {
@@ -407,7 +413,9 @@ ${exampleJson}
             }
 
             // Append the sim block to the message in the user's preferred format
-            const format = get_settings("trackerFormat") || "json";
+            const userFormat = get_settings("trackerFormat") || "auto";
+            // For generation, default to JSON when auto is selected
+            const format = userFormat === "auto" ? "json" : userFormat;
             let simBlock;
             
             if (format === "yaml") {

@@ -107,12 +107,13 @@
         <div class="setting">
           <label for="trackerFormat">Tracker Format</label>
           <select id="trackerFormat" class="text_pole">
+            <option value="auto">Auto-detect</option>
             <option value="json">JSON</option>
             <option value="yaml">YAML</option>
           </select>
         </div>
         <p class="description">
-          Choose the format for generated tracker blocks. Both JSON and YAML formats are supported.
+          Choose the format for generated tracker blocks. Auto-detect will automatically identify the format based on content structure, or you can force a specific format.
         </p>
         <hr />
 

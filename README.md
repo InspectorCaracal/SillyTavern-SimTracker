@@ -41,7 +41,7 @@ A powerful SillyTavern extension that dynamically renders visually appealing tra
 - **Macro Integration**: Includes `{{sim_tracker}}` and `{{last_sim_stats}}` macros for prompt engineering
 - **Data Hiding**: Option to hide raw JSON code blocks while keeping the visual cards
 - **Custom Fields Definition**: Define your own data fields for use in templates and prompts
-- **YAML/JSON Format Switching**: Choose between JSON and YAML formats for your tracker blocks with automatic parsing of both formats
+- **YAML/JSON Format Switching**: Choose between JSON, YAML, or auto-detect formats for your tracker blocks with intelligent format recognition
 - **Data Synchronization**: Automatically synchronize character data to persistent app-data variables when enabled per character, supporting both direct value assignments and incremental changes, with automatic backfill of missing values
 
 ### Template System
@@ -203,8 +203,9 @@ The extension offers extensive configuration options through the SillyTavern set
 5. **Template Selection**: Choose from built-in templates or load custom ones
 6. **Template Position**: Choose where cards should be displayed (can be overridden by templates)
 7. **Custom Fields**: Define your own data fields for tracking
-8. **Data Hiding**: Hide raw JSON code blocks from chat display
-9. **System Prompt**: Customize the base prompt for sim tracking
+8. **Tracker Format**: Choose between JSON, YAML, or auto-detect for parsing tracker blocks
+9. **Data Hiding**: Hide raw JSON code blocks from chat display
+10. **System Prompt**: Customize the base prompt for sim tracking
 
 ### Default Settings
 
@@ -321,12 +322,13 @@ Converts all sim data in the current chat from the old format to the new format.
 - `/sst-convert` - Converts all sim data to the new format using current settings
 - `/sst-convert json` - Converts all sim data to JSON format
 - `/sst-convert yaml` - Converts all sim data to YAML format
+- `/sst-convert auto` - Sets format to auto-detect and migrates all sim data
 
 ### /sst-add
 Adds a sim block to the last character message if it doesn't already have one, and requests continuation.
 
 **Usage:**
-- `/sst-add` - Adds a sim block in the user's preferred format (JSON or YAML)
+- `/sst-add` - Adds a sim block in the user's preferred format (JSON, YAML, or auto-detect with JSON default)
 
 ## Additional Documentation
 

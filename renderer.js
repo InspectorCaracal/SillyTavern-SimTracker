@@ -689,8 +689,9 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
           lastProcessedContent = content;
 
           // Parse the current block using the user's preferred format
-          const userFormat = get_settings("trackerFormat") || "json";
-          const jsonData = parseTrackerData(content, userFormat);
+          const userFormat = get_settings("trackerFormat") || "auto";
+          // If user chose auto-detect, don't pass a format to let parseTrackerData auto-detect
+          const jsonData = userFormat === "auto" ? parseTrackerData(content) : parseTrackerData(content, userFormat);
 
           if (typeof jsonData !== "object" || jsonData === null) {
             console.log(`[SST] [${MODULE_NAME}]`, `Parsed data in message ID ${mesId} is not a valid object for one sim block. Skipping.`);
