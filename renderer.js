@@ -598,41 +598,22 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
 
     // Parse the sim data from the original message content
     const identifier = get_settings("codeBlockIdentifier");
-    const jsonRegex = new RegExp("```" + identifier + "[\\s\\S]*?```");
-    const match = message.mes.match(jsonRegex);
-
-    // Handle message formatting (different behavior based on withSim parameter)
-    let displayMessage = message.mes;
-    if (get_settings("hideSimBlocks")) {
-      const hideRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
-      displayMessage = displayMessage.replace(
-        hideRegex,
-        (match) => `<span style="display: none !important;">${match}</span>`
-      );
-    }
-
-    // Format and display the message content
-    messageElement.innerHTML = messageFormatting(
-      displayMessage,
-      message.name,
-      message.is_system,
-      message.is_user,
-      mesId
-    );
+    const jsonRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
+    const matches = message.mes.match(jsonRegex);
 
     // Determine which data to use
     let dataToProcess = null;
     let shouldProcessData = false;
 
-    if (match && withSim) {
-      // renderTracker: process sim data from current message
-      dataToProcess = match[0];
+    if (matches && withSim) {
+      // renderTracker: process sim data from current message (could be multiple blocks)
+      dataToProcess = matches;
       shouldProcessData = true;
       // Set flag to indicate we're processing a message with sim data
       isGenerationInProgress = true;
-    } else if (match && !withSim) {
-      // renderTrackerWithoutSim: process sim data from current message
-      dataToProcess = match[0];
+    } else if (matches && !withSim) {
+      // renderTrackerWithoutSim: process sim data from current message (could be multiple blocks)
+      dataToProcess = matches;
       shouldProcessData = true;
       // Remove existing container to prevent duplication
       const existingContainer = messageElement.querySelector(`#${CONTAINER_ID}`);
@@ -641,19 +622,45 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
       }
     } else if (!withSim && lastSimJsonString) {
       // renderTrackerWithoutSim fallback: use previous sim data if available
-      dataToProcess = `\`\`\`${identifier}\n${lastSimJsonString}\n\`\`\``;
+      dataToProcess = [`\`\`\`${identifier}\n${lastSimJsonString}\n\`\`\``];
       shouldProcessData = true;
     }
 
-    if (shouldProcessData && dataToProcess) {
-      // Extract content from the data
-      const content = dataToProcess
-        .replace(/```/g, "")
-        .replace(new RegExp(`^${identifier}\\s*`), "")
-        .trim();
+    // Handle message formatting (remove or replace sim blocks if setting is enabled and blocks are present)
+    let displayMessage = message.mes;
+    if (matches && get_settings("hideSimBlocks")) {
+      const hideRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
+      const templatePosition = currentTemplatePosition;
+      
+      if (templatePosition === "INLINE") {
+        // For INLINE position, replace with placeholder that we can find later
+        let blockIndex = 0;
+        displayMessage = displayMessage.replace(hideRegex, () => {
+          return `[SST_INLINE_PLACEHOLDER_${blockIndex++}]`;
+        });
+        console.log(`[SST] [${MODULE_NAME}]`, `displayMessage after placeholder replacement:`, displayMessage.substring(0, 500));
+      } else {
+        // For other positions, remove blocks entirely
+        displayMessage = displayMessage.replace(hideRegex, "");
+      }
+    }
 
-      // Update lastSimJsonString
-      lastSimJsonString = content;
+    // Format and display the message content
+    const formattedMessage = messageFormatting(
+      displayMessage,
+      message.name,
+      message.is_system,
+      message.is_user,
+      mesId
+    );
+    console.log(`[SST] [${MODULE_NAME}]`, `formattedMessage after messageFormatting:`, formattedMessage.substring(0, 500));
+    messageElement.innerHTML = formattedMessage;
+
+    if (shouldProcessData && dataToProcess) {
+      let mergedWorldData = {};
+      let allCharacters = [];
+      let lastProcessedContent = "";
+      let simBlocksData = []; // Store data for each sim block separately for INLINE positioning
 
       // Remove any preparing text
       const preparingText = messageElement.parentNode.querySelector(".sst-preparing-text");
@@ -663,51 +670,104 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
         mesTextsWithPreparingText.delete(messageElement);
       }
 
-      let jsonData;
-      try {
-        // Use our new universal parser that can handle both JSON and YAML
-        jsonData = parseTrackerData(content);
-      } catch (parseError) {
-        console.log(`[SST] [${MODULE_NAME}]`,
-          `Failed to parse tracker data in message ID ${mesId}. Error: ${parseError.message}`
-        );
-        messageElement.insertAdjacentHTML(
-          "beforeend",
-          `<div style="color: red; font-family: monospace;">[SillySimTracker] Error: Invalid tracker data format in code block.</div>`
-        );
-        return;
-      }
+      // Process each sim block
+      for (const block of dataToProcess) {
+        try {
+          // Extract content from the current block
+          const content = block
+            .replace(/```/g, "")
+            .replace(new RegExp(`^${identifier}\\s*`), "")
+            .trim();
 
-      if (typeof jsonData !== "object" || jsonData === null) {
-        console.log(`[SST] [${MODULE_NAME}]`, `Parsed data in message ID ${mesId} is not a valid object.`);
-        return;
-      }
+          // Skip empty blocks
+          if (!content) {
+            console.log(`[SST] [${MODULE_NAME}]`, `Empty sim block found in message ID ${mesId}. Skipping.`);
+            continue;
+          }
 
-      // Handle both old and new JSON formats
-      let worldData, characterList;
+          // Keep track of the last processed content for lastSimJsonString
+          lastProcessedContent = content;
 
-      // Check if it's the new format (with worldData and cards array)
-      if (jsonData.worldData && Array.isArray(jsonData.cards)) {
-        worldData = jsonData.worldData;
-        characterList = jsonData.cards;
-      } else {
-        // Handle old format - convert object structure to array format
-        const worldDataFields = ["current_date", "current_time"];
-        worldData = {};
-        characterList = [];
+          // Parse the current block
+          const jsonData = parseTrackerData(content);
 
-        Object.keys(jsonData).forEach((key) => {
-          if (worldDataFields.includes(key)) {
-            worldData[key] = jsonData[key];
+          if (typeof jsonData !== "object" || jsonData === null) {
+            console.log(`[SST] [${MODULE_NAME}]`, `Parsed data in message ID ${mesId} is not a valid object for one sim block. Skipping.`);
+            continue;
+          }
+
+          // Handle both old and new JSON formats for this block
+          let blockWorldData, blockCharacterList;
+
+          // Check if it's the new format (with worldData and cards array)
+          if (jsonData.worldData && Array.isArray(jsonData.cards)) {
+            blockWorldData = jsonData.worldData;
+            blockCharacterList = jsonData.cards;
           } else {
-            // Convert character object to array item
-            characterList.push({
-              name: key,
-              ...jsonData[key],
+            // Handle old format - convert object structure to array format
+            const worldDataFields = ["current_date", "current_time"];
+            blockWorldData = {};
+            blockCharacterList = [];
+
+            Object.keys(jsonData).forEach((key) => {
+              if (worldDataFields.includes(key)) {
+                blockWorldData[key] = jsonData[key];
+              } else {
+                // Convert character object to array item
+                blockCharacterList.push({
+                  name: key,
+                  ...jsonData[key],
+                });
+              }
             });
           }
-        });
+
+          // Merge world data (last block wins for conflicting keys)
+          mergedWorldData = { ...mergedWorldData, ...blockWorldData };
+
+          // Store this sim block's data for INLINE positioning
+          if (currentTemplatePosition === "INLINE") {
+            simBlocksData.push({
+              worldData: blockWorldData,
+              characters: blockCharacterList || []
+            });
+          }
+
+          // Add characters from this block, avoiding duplicates by name
+          if (blockCharacterList && blockCharacterList.length > 0) {
+            blockCharacterList.forEach(character => {
+              if (character && character.name) {
+                // Remove any existing character with the same name (last occurrence wins)
+                allCharacters = allCharacters.filter(existing => existing.name !== character.name);
+                allCharacters.push(character);
+              }
+            });
+          }
+
+        } catch (parseError) {
+          console.log(`[SST] [${MODULE_NAME}]`,
+            `Failed to parse tracker data in one sim block in message ID ${mesId}. Error: ${parseError.message}. Skipping this block.`
+          );
+          continue;
+        }
       }
+
+      // Check if we got any valid data
+      if (allCharacters.length === 0) {
+        console.log(`[SST] [${MODULE_NAME}]`, `No valid character data found in any sim blocks in message ID ${mesId}.`);
+        messageElement.insertAdjacentHTML(
+          "beforeend",
+          `<div style="color: red; font-family: monospace;">[SillySimTracker] Error: No valid character data found in any sim blocks.</div>`
+        );
+        return;
+      }
+
+      // Update lastSimJsonString with the last processed content
+      lastSimJsonString = lastProcessedContent;
+
+      // Use the merged data
+      let worldData = mergedWorldData;
+      let characterList = allCharacters;
 
       const currentDate = worldData.current_date || "Unknown Date";
       const currentTime = worldData.current_time || "Unknown Time";
@@ -728,7 +788,9 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
       const templateFile = get_settings("templateFile");
       const customTemplateHtml = get_settings("customTemplateHtml");
       const isTabbedTemplate = templateFile.includes("tabs") ||
-                               (customTemplateHtml && customTemplateHtml.includes("sim-tracker-tabs"));
+                               templateFile.includes("inline") ||
+                               (customTemplateHtml && customTemplateHtml.includes("sim-tracker-tabs")) ||
+                               (customTemplateHtml && customTemplateHtml.includes("{{#each cards}}"));
 
       let cardsHtml = "";
       if (isTabbedTemplate) {
@@ -837,6 +899,9 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
 
       // Use the template position from the templating module
       const templatePosition = currentTemplatePosition;
+      console.log(`[SST] [${MODULE_NAME}]`, `Template position for message ${mesId}: "${templatePosition}"`);
+      console.log(`[SST] [${MODULE_NAME}]`, `hideSimBlocks setting: ${get_settings("hideSimBlocks")}`);
+      console.log(`[SST] [${MODULE_NAME}]`, `matches length: ${matches ? matches.length : 0}`);
 
       // Handle different positions
       switch (templatePosition) {
@@ -876,6 +941,165 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
             const finalHtml = compiledWrapperTemplate({ cardsHtml });
             placeholder.insertAdjacentHTML("beforebegin", finalHtml);
             placeholder.remove();
+          }
+          break;
+        case "INLINE":
+          console.log(`[SST] [${MODULE_NAME}]`, `Executing INLINE case`);
+          // For INLINE position, insert cards inline where sim blocks are/were
+          
+          if (matches && get_settings("hideSimBlocks")) {
+            console.log(`[SST] [${MODULE_NAME}]`, `INLINE: sim blocks hidden, looking for text placeholders`);
+            // If sim blocks are hidden, look for text placeholders and replace them
+            let currentHtml = messageElement.innerHTML;
+            console.log(`[SST] [${MODULE_NAME}]`, `Current HTML contains placeholders:`, currentHtml.includes("[SST_INLINE_PLACEHOLDER_"));
+            
+            // Find all text placeholders (try both formats - with and without double underscores)
+            let placeholderRegex = /\[SST_INLINE_PLACEHOLDER_\d+\]/g;
+            let placeholderMatches = currentHtml.match(placeholderRegex);
+            
+            if (!placeholderMatches || placeholderMatches.length === 0) {
+              // Try without double underscores in case messageFormatting stripped them
+              placeholderRegex = /SST_INLINE_PLACEHOLDER_\d+/g;
+              placeholderMatches = currentHtml.match(placeholderRegex);
+              console.log(`[SST] [${MODULE_NAME}]`, `Trying without double underscores, found ${placeholderMatches ? placeholderMatches.length : 0} placeholders`);
+            }
+            
+            console.log(`[SST] [${MODULE_NAME}]`, `Found ${placeholderMatches ? placeholderMatches.length : 0} text placeholders`);
+            console.log(`[SST] [${MODULE_NAME}]`, `Available sim blocks data: ${simBlocksData.length}`);
+            
+            if (placeholderMatches && placeholderMatches.length > 0 && simBlocksData.length > 0) {
+              // Create individual cards for each sim block
+              let updatedHtml = currentHtml;
+              
+              placeholderMatches.forEach((placeholder, index) => {
+                if (index < simBlocksData.length) {
+                  // Get data for this specific sim block
+                  const blockData = simBlocksData[index];
+                  const blockWorldData = blockData.worldData;
+                  const blockCharacters = blockData.characters;
+                  
+                  console.log(`[SST] [${MODULE_NAME}]`, `Creating card for placeholder ${index} with ${blockCharacters.length} characters`);
+                  
+                  // Process character data for this block only
+                  if (blockCharacters.length > 0) {
+                    if (withSim) {
+                      processCharacterDataSync(blockWorldData, blockCharacters);
+                    }
+                    backfillMissingKeys(blockCharacters, withSim);
+                    
+                    // Create cards HTML for this block's characters
+                    let blockCardsHtml = "";
+                    if (isTabbedTemplate) {
+                      const blockCharactersData = blockCharacters
+                        .map((character, charIndex) => {
+                          const stats = character;
+                          const name = character.name;
+                          if (!stats) return null;
+                          const bgColor = stats.bg || stats.bgColor || stats.color || defaultBgColor;
+                          
+                          // Extract dynamic fields for this character (same as main logic)
+                          const dynamicFields = extractDisplayableFields(stats, blockWorldData);
+                          const dynamicStatsHtml = generateDynamicStatsHtml(dynamicFields);
+                          
+                          return {
+                            characterName: name, // Use characterName instead of name for template compatibility
+                            currentDate: currentDate,
+                            currentTime: currentTime,
+                            stats: {
+                              ...stats,
+                              internal_thought: stats.internal_thought || stats.thought || "No thought recorded.",
+                              relationshipStatus: stats.relationshipStatus || "Unknown Status",
+                              desireStatus: stats.desireStatus || "Unknown Desire",
+                              inactive: stats.inactive || false,
+                              inactiveReason: stats.inactiveReason || 0,
+                            },
+                            bgColor: bgColor,
+                            darkerBgColor: darkenColor(bgColor),
+                            dynamicFields: dynamicFields,
+                            dynamicStatsHtml: dynamicStatsHtml,
+                            cardIndex: charIndex,
+                            isActive: charIndex === 0 ? "active" : "",
+                            ariaSelected: charIndex === 0 ? "true" : "false"
+                          };
+                        })
+                        .filter(char => char !== null);
+                      
+                      const blockTemplateData = {
+                        cards: blockCharactersData,
+                        worldData: blockWorldData
+                      };
+                      
+                      console.log(`[SST] [${MODULE_NAME}]`, `Block template data for placeholder ${index}:`, JSON.stringify(blockTemplateData, null, 2));
+                      blockCardsHtml = compiledCardTemplate(blockTemplateData);
+                    } else {
+                      blockCardsHtml = blockCharacters
+                        .map((character) => {
+                          const name = character.name;
+                          const stats = character;
+                          if (!stats) return "";
+                          
+                          // For non-tabbed templates, use the original simple structure
+                          const templateData = { 
+                            characterName: name, // Use characterName for consistency
+                            name: name, // Keep name for backward compatibility 
+                            stats: JSON.stringify(stats),
+                            currentDate: currentDate,
+                            currentTime: currentTime,
+                            bgColor: stats.bg || stats.bgColor || stats.color || defaultBgColor
+                          };
+                          console.log(`[SST] [${MODULE_NAME}]`, `Non-tabbed template data for ${name}:`, JSON.stringify(templateData, null, 2));
+                          return compiledCardTemplate(templateData);
+                        })
+                        .join("");
+                    }
+                    
+                    // Wrap the cards HTML with the wrapper template
+                    const blockFinalHtml = compiledWrapperTemplate({ cardsHtml: blockCardsHtml });
+                    
+                    // Replace this placeholder with the block's cards
+                    updatedHtml = updatedHtml.replace(placeholder, blockFinalHtml);
+                  } else {
+                    // Remove empty placeholder
+                    updatedHtml = updatedHtml.replace(placeholder, "");
+                  }
+                } else {
+                  // Remove extra placeholders that don't have corresponding data
+                  updatedHtml = updatedHtml.replace(placeholder, "");
+                }
+              });
+              
+              messageElement.innerHTML = updatedHtml;
+              console.log(`[SST] [${MODULE_NAME}]`, `Updated message HTML with individual inline cards`);
+            } else {
+              // Fallback: use merged data and insert at the end
+              console.log(`[SST] [${MODULE_NAME}]`, `No matching placeholders found, using fallback with merged data`);
+              const finalHtmlInline = compiledWrapperTemplate({ cardsHtml });
+              messageElement.insertAdjacentHTML("beforeend", finalHtmlInline);
+            }
+          } else if (matches) {
+            // If sim blocks are visible, insert cards after the last sim block
+            const codeBlocks = messageElement.querySelectorAll("pre code");
+            let lastSimBlock = null;
+            
+            // Find the last sim block by checking code content
+            for (let i = codeBlocks.length - 1; i >= 0; i--) {
+              const codeElement = codeBlocks[i];
+              const content = codeElement.textContent || "";
+              if (content.trim().startsWith(identifier)) {
+                lastSimBlock = codeElement.closest("pre");
+                break;
+              }
+            }
+            
+            if (lastSimBlock) {
+              lastSimBlock.insertAdjacentHTML("afterend", finalHtmlInline);
+            } else {
+              // Fallback: insert at the end if we can't find the sim block
+              messageElement.insertAdjacentHTML("beforeend", finalHtmlInline);
+            }
+          } else {
+            // No sim blocks found, insert at the end
+            messageElement.insertAdjacentHTML("beforeend", finalHtmlInline);
           }
           break;
         case "BOTTOM":

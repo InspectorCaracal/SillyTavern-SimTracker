@@ -88,13 +88,18 @@ const updateLastSimStatsOnRegenerateOrSwipe = (currentMesId = null, get_settings
       // Check if this message contains sim data
       const identifier = get_settings("codeBlockIdentifier");
       const simRegex = new RegExp(
-        "```" + identifier + "[\\\\s\\\\S]*?```",
-        "m"
+        "```" + identifier + "[\\s\\S]*?```",
+        "gm"
       );
-      const match = message.mes.match(simRegex);
+      const matches = message.mes.match(simRegex);
 
-      if (match) {
-        // Extract content from the match\n        const fullContent = match[0];\n        const content = fullContent\n          .replace(/```/g, \"\")\n          .replace(new RegExp(`^${identifier}\\\\s*`), \"\")\n          .trim();
+      if (matches && matches.length > 0) {
+        // Use the last sim block in the message (most recent)
+        const lastMatch = matches[matches.length - 1];
+        const content = lastMatch
+          .replace(/```/g, "")
+          .replace(new RegExp(`^${identifier}\\s*`), "")
+          .trim();
 
         // Update the lastSimJsonString with the found message's sim data
         return content;
