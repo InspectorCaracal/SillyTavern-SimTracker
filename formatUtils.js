@@ -1,5 +1,6 @@
 // formatUtils.js - Format detection, parsing, and generation utilities
 import { get_extension_directory } from "./utils.js";
+import { yaml } from "../../../../lib.js";
 
 const MODULE_NAME = "silly-sim-tracker";
 
@@ -22,192 +23,27 @@ const detectFormat = (content) => {
   return "yaml";
 };
 
-// Improved function to parse YAML content
+// Function to parse YAML content using SillyTavern's built-in YAML library
 const parseYaml = (yamlContent) => {
   try {
-    // This is a simplified YAML parser for our specific use case
-    // A full implementation would use a library like js-yaml
-    const lines = yamlContent.trim().split('\n');
-    const result = {};
-    let currentObject = result;
-    const stack = [result];
-    let inArray = false;
-    let currentArray = null;
-    let pendingArrayKey = null; // Key that should receive the next array
-    
-    lines.forEach(line => {
-      // Skip empty lines and comments
-      if (!line.trim() || line.trim().startsWith('#')) return;
-      
-      // Calculate indentation level
-      const indent = line.search(/\S/);
-      const trimmedLine = line.trim();
-      
-      // Handle array items (lines starting with -)
-      if (trimmedLine.startsWith('- ')) {
-        // If we have a pending array key and we're not already in an array, start one
-        if (!inArray) {
-          inArray = true;
-          currentArray = [];
-          const parent = stack[stack.length - 1];
-          if (pendingArrayKey) {
-            parent[pendingArrayKey] = currentArray;
-            pendingArrayKey = null;
-          } else {
-            // Fallback: assume it's cards if no pending key
-            parent.cards = currentArray;
-          }
-        }
-        
-        // Extract the content after "- "
-        const itemContent = trimmedLine.substring(2).trim();
-        
-        // Check if it's a nested object
-        if (itemContent.endsWith(':')) {
-          // This is a nested object in the array
-          const newItem = {};
-          currentArray.push(newItem);
-          stack.push(newItem);
-        } else if (itemContent.includes(':')) {
-          // This is a key-value pair in an array item
-          // Create a new object for this array item if we don't have one
-          if (currentArray.length === 0 || typeof currentArray[currentArray.length - 1] !== 'object') {
-            const newItem = {};
-            if (currentArray.length > 0 && typeof currentArray[currentArray.length - 1] !== 'object') {
-              // Replace the last item if it was a simple value
-              currentArray.pop();
-            }
-            currentArray.push(newItem);
-            stack.push(newItem);
-          }
-          
-          const currentArrayItem = stack[stack.length - 1];
-          const parts = itemContent.split(':');
-          const key = parts[0].trim().replace(/["']/g, '');
-          const value = parts.slice(1).join(':').trim();
-          
-          // Handle different value types
-          if (value === 'true' || value === 'false') {
-            currentArrayItem[key] = value === 'true';
-          } else if (!isNaN(value) && value !== '') {
-            currentArrayItem[key] = Number(value);
-          } else {
-            currentArrayItem[key] = value.replace(/["']/g, '');
-          }
-        } else {
-          // Simple value in array
-          currentArray.push(itemContent);
-        }
-        return;
-      }
-      
-      // If we were in an array and now have a regular key, exit array mode
-      if (inArray && !trimmedLine.startsWith('- ')) {
-        inArray = false;
-        // Pop array items from stack if needed
-        while (stack.length > (indent / 2) + 1) {
-          stack.pop();
-        }
-      }
-      
-      // If we have a pending array key but this isn't an array item, create a nested object instead
-      if (pendingArrayKey && !trimmedLine.startsWith('- ')) {
-        const parent = stack[stack.length - 1];
-        const newObject = {};
-        parent[pendingArrayKey] = newObject;
-        stack.push(newObject);
-        pendingArrayKey = null;
-      }
-      
-      // Adjust stack based on indentation
-      while (stack.length > (indent / 2) + 1) {
-        stack.pop();
-      }
-      
-      // Get current object at this indentation level
-      currentObject = stack[stack.length - 1];
-      
-      // Parse key-value pairs
-      if (trimmedLine.includes(':')) {
-        const parts = trimmedLine.split(':');
-        const key = parts[0].trim().replace(/["']/g, '');
-        const value = parts.slice(1).join(':').trim();
-        
-        // Handle nested objects or arrays
-        if (value === '') {
-          // This could be a nested object or an array
-          // We'll mark this key as potentially receiving an array
-          pendingArrayKey = key;
-          // Don't create an object yet, wait to see if it's an array
-        } else {
-          // Handle different value types
-          if (value === 'true' || value === 'false') {
-            currentObject[key] = value === 'true';
-          } else if (!isNaN(value) && value !== '') {
-            currentObject[key] = Number(value);
-          } else {
-            currentObject[key] = value.replace(/["']/g, '');
-          }
-        }
-      }
-    });
-    
-    return result;
+    return yaml.parse(yamlContent);
   } catch (error) {
     log(`Error parsing YAML content: ${error.message}`);
     throw error;
   }
 };
 
-// Function to convert JSON to YAML
-const convertJsonToYaml = (jsonObject, indent = 0) => {
-  let yaml = '';
-  const indentStr = '  '.repeat(indent);
-  
-  if (typeof jsonObject === 'object' && jsonObject !== null) {
-    if (Array.isArray(jsonObject)) {
-      jsonObject.forEach(item => {
-        if (typeof item === 'object' && item !== null) {
-          yaml += `${indentStr}-\n${convertJsonToYaml(item, indent + 1)}`;
-        } else {
-          yaml += `${indentStr}- ${convertValueToYaml(item)}\n`;
-        }
-      });
-    } else {
-      Object.keys(jsonObject).forEach(key => {
-        const value = jsonObject[key];
-        if (typeof value === 'object' && value !== null) {
-          if (Array.isArray(value)) {
-            yaml += `${indentStr}${key}:\n`;
-            yaml += convertJsonToYaml(value, indent + 1);
-          } else {
-            yaml += `${indentStr}${key}:\n`;
-            yaml += convertJsonToYaml(value, indent + 1);
-          }
-        } else {
-          yaml += `${indentStr}${key}: ${convertValueToYaml(value)}\n`;
-        }
-      });
-    }
+// Function to convert JSON to YAML using SillyTavern's built-in YAML library
+const convertJsonToYaml = (jsonObject) => {
+  try {
+    return yaml.stringify(jsonObject);
+  } catch (error) {
+    log(`Error converting JSON to YAML: ${error.message}`);
+    throw error;
   }
-  
-  return yaml;
 };
 
-// Helper function to convert a value to its YAML representation
-const convertValueToYaml = (value) => {
-  if (typeof value === 'string') {
-    // Check if string needs quotes
-    if (value.includes(':') || value.includes('#') || /\s/.test(value)) {
-      return `"${value}"`;
-    }
-    return value;
-  }
-  if (typeof value === 'boolean') {
-    return value ? 'true' : 'false';
-  }
-  return String(value);
-};
+
 
 // Universal parser that can handle both JSON and YAML
 const parseTrackerData = (content, format = null) => {
@@ -266,7 +102,6 @@ export {
   detectFormat,
   parseYaml,
   convertJsonToYaml,
-  convertValueToYaml,
   parseTrackerData,
   generateTrackerBlock,
   convertTrackerFormat
