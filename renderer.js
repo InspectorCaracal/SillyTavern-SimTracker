@@ -5,9 +5,13 @@ import { extractTemplatePosition, currentTemplatePosition } from "./templating.j
 import { parseTrackerData } from "./formatUtils.js";
 import { extractDisplayableFields, generateDynamicStatsHtml } from "./fieldMapping.js";
 import { getGlobalVariable, setGlobalVariable } from "../../../variables.js";
+import { DEBUG } from "./utils.js";
 
 const MODULE_NAME = "silly-sim-tracker";
 const CONTAINER_ID = "silly-sim-tracker-container";
+
+// Cache for message data hashes to enable selective re-rendering
+export const messageDataCache = new Map();
 
 // Global sidebar tracker elements
 let globalLeftSidebar = null;
@@ -708,18 +712,26 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
     );
     if (!messageElement) return;
 
-    // Log message element dimensions for debugging layout issues
-    const messageRect = messageElement.getBoundingClientRect();
-    console.log(`[SST] [${MODULE_NAME}]`,
-      `Message ID ${mesId} dimensions - Width: ${messageRect.width.toFixed(
-        2
-      )}px, Height: ${messageRect.height.toFixed(2)}px`
-    );
-
     // Parse the sim data from the original message content
     const identifier = get_settings("codeBlockIdentifier");
     const jsonRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
     const matches = message.mes.match(jsonRegex);
+    
+    // Selective re-rendering: check if data has changed
+    const dataHash = matches ? matches.join('|') : '';
+    const cachedHash = messageDataCache.get(mesId);
+    const hasExistingCard = messageElement.querySelector(`#${CONTAINER_ID}`);
+    
+    // Skip re-rendering if data hasn't changed and card already exists
+    if (cachedHash === dataHash && hasExistingCard) {
+      DEBUG && console.log(`[SST] [${MODULE_NAME}] Skipping render for message ${mesId} - no changes`);
+      return;
+    }
+    
+    // Update cache
+    messageDataCache.set(mesId, dataHash);
+    
+    DEBUG && console.log(`[SST] [${MODULE_NAME}] Message ID ${mesId} - rendering...`);
 
     // Determine which data to use
     let dataToProcess = null;
@@ -758,7 +770,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
         displayMessage = displayMessage.replace(hideRegex, () => {
           return `[SST_INLINE_PLACEHOLDER_${blockIndex++}]`;
         });
-        console.log(`[SST] [${MODULE_NAME}]`, `displayMessage after placeholder replacement:`, displayMessage.substring(0, 500));
+        DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `displayMessage after placeholder replacement:`, displayMessage.substring(0, 500));
       } else {
         // For other positions, remove blocks entirely
         displayMessage = displayMessage.replace(hideRegex, "");
@@ -773,7 +785,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
       message.is_user,
       mesId
     );
-    console.log(`[SST] [${MODULE_NAME}]`, `formattedMessage after messageFormatting:`, formattedMessage.substring(0, 500));
+    DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `formattedMessage after messageFormatting:`, formattedMessage.substring(0, 500));
     messageElement.innerHTML = formattedMessage;
 
     if (shouldProcessData && dataToProcess) {
@@ -801,7 +813,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
 
           // Skip empty blocks
           if (!content) {
-            console.log(`[SST] [${MODULE_NAME}]`, `Empty sim block found in message ID ${mesId}. Skipping.`);
+            DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Empty sim block found in message ID ${mesId}. Skipping.`);
             continue;
           }
 
@@ -814,7 +826,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
           const jsonData = userFormat === "auto" ? parseTrackerData(content) : parseTrackerData(content, userFormat);
 
           if (typeof jsonData !== "object" || jsonData === null) {
-            console.log(`[SST] [${MODULE_NAME}]`, `Parsed data in message ID ${mesId} is not a valid object for one sim block. Skipping.`);
+            DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Parsed data in message ID ${mesId} is not a valid object for one sim block. Skipping.`);
             continue;
           }
 
@@ -876,7 +888,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
 
       // Check if we got any valid data
       if (allCharacters.length === 0) {
-        console.log(`[SST] [${MODULE_NAME}]`, `No valid character data found in any sim blocks in message ID ${mesId}.`);
+        DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `No valid character data found in any sim blocks in message ID ${mesId}.`);
         messageElement.insertAdjacentHTML(
           "beforeend",
           `<div style="color: red; font-family: monospace;">[SillySimTracker] Error: No valid character data found in any sim blocks.</div>`
@@ -941,9 +953,9 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
 
       // Use the template position from the templating module
       const templatePosition = currentTemplatePosition;
-      console.log(`[SST] [${MODULE_NAME}]`, `Template position for message ${mesId}: "${templatePosition}"`);
-      console.log(`[SST] [${MODULE_NAME}]`, `hideSimBlocks setting: ${get_settings("hideSimBlocks")}`);
-      console.log(`[SST] [${MODULE_NAME}]`, `matches length: ${matches ? matches.length : 0}`);
+      DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Template position for message ${mesId}: "${templatePosition}"`);
+      DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `hideSimBlocks setting: ${get_settings("hideSimBlocks")}`);
+      DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `matches length: ${matches ? matches.length : 0}`);
 
       // Handle different positions
       switch (templatePosition) {
@@ -986,14 +998,14 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
           }
           break;
         case "INLINE":
-          console.log(`[SST] [${MODULE_NAME}]`, `Executing INLINE case`);
+          DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Executing INLINE case`);
           // For INLINE position, insert cards inline where sim blocks are/were
           
           if (matches && get_settings("hideSimBlocks")) {
-            console.log(`[SST] [${MODULE_NAME}]`, `INLINE: sim blocks hidden, looking for text placeholders`);
+            DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `INLINE: sim blocks hidden, looking for text placeholders`);
             // If sim blocks are hidden, look for text placeholders and replace them
             let currentHtml = messageElement.innerHTML;
-            console.log(`[SST] [${MODULE_NAME}]`, `Current HTML contains placeholders:`, currentHtml.includes("[SST_INLINE_PLACEHOLDER_"));
+            DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Current HTML contains placeholders:`, currentHtml.includes("[SST_INLINE_PLACEHOLDER_"));
             
             // Find all text placeholders (try both formats - with and without double underscores)
             let placeholderRegex = /\[SST_INLINE_PLACEHOLDER_\d+\]/g;
@@ -1003,11 +1015,11 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
               // Try without double underscores in case messageFormatting stripped them
               placeholderRegex = /SST_INLINE_PLACEHOLDER_\d+/g;
               placeholderMatches = currentHtml.match(placeholderRegex);
-              console.log(`[SST] [${MODULE_NAME}]`, `Trying without double underscores, found ${placeholderMatches ? placeholderMatches.length : 0} placeholders`);
+              DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Trying without double underscores, found ${placeholderMatches ? placeholderMatches.length : 0} placeholders`);
             }
             
-            console.log(`[SST] [${MODULE_NAME}]`, `Found ${placeholderMatches ? placeholderMatches.length : 0} text placeholders`);
-            console.log(`[SST] [${MODULE_NAME}]`, `Available sim blocks data: ${simBlocksData.length}`);
+            DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Found ${placeholderMatches ? placeholderMatches.length : 0} text placeholders`);
+            DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Available sim blocks data: ${simBlocksData.length}`);
             
             if (placeholderMatches && placeholderMatches.length > 0 && simBlocksData.length > 0) {
               // Create individual cards for each sim block
@@ -1019,7 +1031,7 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
                   const blockData = simBlocksData[index];
                   const blockCharacters = blockData.cards; // Use 'cards' instead of 'characters'
                   
-                  console.log(`[SST] [${MODULE_NAME}]`, `Creating card for placeholder ${index} with ${blockCharacters.length} characters`);
+                  DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Creating card for placeholder ${index} with ${blockCharacters.length} characters`);
                   
                   // Process character data for this block only
                   if (blockCharacters.length > 0) {
@@ -1046,13 +1058,13 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
                     let blockCardsHtml = "";
                     if (isTabbedTemplate) {
                       const blockTemplateData = buildTemplateContext(blockCharacters, worldData, blockTemplateConfig);
-                      console.log(`[SST] [${MODULE_NAME}]`, `Block template data for placeholder ${index}:`, JSON.stringify(blockTemplateData, null, 2));
+                      DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Block template data for placeholder ${index}:`, JSON.stringify(blockTemplateData, null, 2));
                       blockCardsHtml = compiledCardTemplate(blockTemplateData);
                     } else {
                       const blockCardDataArray = buildTemplateContext(blockCharacters, worldData, blockTemplateConfig);
                       blockCardsHtml = blockCardDataArray
                         .map(cardData => {
-                          console.log(`[SST] [${MODULE_NAME}]`, `Non-tabbed template data for ${cardData.characterName}:`, JSON.stringify(cardData, null, 2));
+                          DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Non-tabbed template data for ${cardData.characterName}:`, JSON.stringify(cardData, null, 2));
                           return compiledCardTemplate(cardData);
                         })
                         .join("");
@@ -1074,10 +1086,10 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
               });
               
               messageElement.innerHTML = updatedHtml;
-              console.log(`[SST] [${MODULE_NAME}]`, `Updated message HTML with individual inline cards`);
+              DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Updated message HTML with individual inline cards`);
             } else {
               // Fallback: use merged data and insert at the end
-              console.log(`[SST] [${MODULE_NAME}]`, `No matching placeholders found, using fallback with merged data`);
+              DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `No matching placeholders found, using fallback with merged data`);
               const finalHtmlInline = compiledWrapperTemplate({ cardsHtml });
               messageElement.insertAdjacentHTML("beforeend", finalHtmlInline);
             }
@@ -1134,7 +1146,7 @@ const renderTrackerWithoutSim = (mesId, get_settings, compiledWrapperTemplate, c
 };
 
 const refreshAllCards = (get_settings, CONTAINER_ID, renderTrackerWithoutSim) => {
-  console.log(`[SST] [${MODULE_NAME}]`, "Refreshing all tracker cards on screen.");
+  DEBUG && console.log(`[SST] [${MODULE_NAME}]`, "Refreshing all tracker cards on screen.");
 
   // First, remove all existing tracker containers to prevent duplicates
   document.querySelectorAll(`#${CONTAINER_ID}`).forEach((container) => {
@@ -1161,6 +1173,7 @@ export {
   renderTracker,
   renderTrackerWithoutSim,
   refreshAllCards,
+  messageDataCache,
   mesTextsWithPreparingText,
   isGenerationInProgress,
   pendingLeftSidebarContent,

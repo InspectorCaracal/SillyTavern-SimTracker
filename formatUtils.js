@@ -1,11 +1,11 @@
 // formatUtils.js - Format detection, parsing, and generation utilities
-import { get_extension_directory } from "./utils.js";
+import { get_extension_directory, DEBUG } from "./utils.js";
 import { yaml } from "../../../../lib.js";
 
 const MODULE_NAME = "silly-sim-tracker";
 
 // --- FORMAT UTILITIES ---
-const log = (message) => console.log(`[SST] [${MODULE_NAME}]`, message);
+const log = (message) => DEBUG && console.log(`[SST] [${MODULE_NAME}]`, message);
 
 // Function to detect the format of a tracker block
 const detectFormat = (content) => {

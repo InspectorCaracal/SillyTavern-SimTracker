@@ -4,8 +4,11 @@ import { parseTrackerData, generateTrackerBlock, detectFormat } from "./formatUt
 
 const MODULE_NAME = "silly-sim-tracker";
 
+// Debug flag - set to false for production to improve performance
+const DEBUG = false;
+
 // --- UTILITY FUNCTIONS ---
-const log = (message) => console.log(`[SST] [${MODULE_NAME}]`, message);
+const log = (message) => DEBUG && console.log(`[SST] [${MODULE_NAME}]`, message);
 
 // Utility to sanitize a field key (replace spaces with underscores)
 const sanitizeFieldKey = (key) => key.replace(/\s+/g, "_");
@@ -294,6 +297,7 @@ const migrateAllSimData = async (get_settings) => {
 // Export functions
 export {
   log,
+  DEBUG,
   sanitizeFieldKey,
   darkenColor,
   getReactionEmoji,

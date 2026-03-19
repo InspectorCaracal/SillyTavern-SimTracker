@@ -1,4 +1,5 @@
 // fieldMapping.js - Dynamic field mapping and display configuration
+import { DEBUG } from "./utils.js";
 //
 // Custom Icon Support:
 // The JSON block can specify custom icons for any field using these formats:

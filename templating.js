@@ -1,4 +1,6 @@
 // templating.js - Handlebar replacements and template parsing
+import { DEBUG } from "./utils.js";
+
 const MODULE_NAME = "silly-sim-tracker";
 
 // Module-level variable to store the current template position
@@ -120,7 +122,7 @@ const get_extension_directory = () => {
 };
 
 async function populateTemplateDropdown(get_settings) {
-  console.log(`[SST] [${MODULE_NAME}]`, "Populating template dropdown with parsed friendly names...");
+  DEBUG && console.log(`[SST] [${MODULE_NAME}] Populating template dropdown with parsed friendly names...`);
 
   const defaultFiles = [
     "dating-card-template.json",
@@ -209,7 +211,7 @@ async function populateTemplateDropdown(get_settings) {
   // Sort the results alphabetically by friendly name for a clean list
   templateOptions.sort((a, b) => a.friendlyName.localeCompare(b.friendlyName));
 
-  console.log(`[SST] [${MODULE_NAME}]`, "Template options to be added to dropdown:", templateOptions);
+  DEBUG && console.log(`[SST] [${MODULE_NAME}] Template options to be added to dropdown:`, templateOptions);
 
   const $select = $("#templateFile");
   const currentSelection = get_settings ? get_settings("templateFile") : null;
@@ -228,7 +230,7 @@ async function populateTemplateDropdown(get_settings) {
 
   // Restore the user's selection
   $select.val(currentSelection);
-  console.log(`[SST] [${MODULE_NAME}]`, "Template dropdown populated with friendly names.");
+  DEBUG && console.log(`[SST] [${MODULE_NAME}] Template dropdown populated with friendly names.`);
 }
 
 function handleCustomTemplateUpload(event, set_settings, loadTemplate, refreshAllCards) {
@@ -240,7 +242,7 @@ function handleCustomTemplateUpload(event, set_settings, loadTemplate, refreshAl
   const reader = new FileReader();
   reader.onload = async (e) => {
     const content = e.target.result;
-    console.log(`[SST] [${MODULE_NAME}]`, `Read custom template ${file.name}, size: ${content.length}`);
+    DEBUG && console.log(`[SST] [${MODULE_NAME}] Read custom template ${file.name}, size: ${content.length}`);
     set_settings("customTemplateHtml", content);
     toastr.success(`Custom template "${file.name}" loaded and applied!`);
 
@@ -256,14 +258,14 @@ function handleCustomTemplateUpload(event, set_settings, loadTemplate, refreshAl
 // Load template from file
 const loadTemplate = async (get_settings, set_settings) => {
   if (!get_settings || !set_settings) {
-    console.error(`[SST] [${MODULE_NAME}]`, "loadTemplate called without required get_settings and set_settings functions");
+    console.error(`[SST] [${MODULE_NAME}] loadTemplate called without required get_settings and set_settings functions`);
     return;
   }
   
   const customTemplateHtml = get_settings("customTemplateHtml");
 
   if (customTemplateHtml && customTemplateHtml.trim() !== "") {
-    console.log(`[SST] [${MODULE_NAME}]`, "Loading template from custom HTML stored in settings.");
+    DEBUG && console.log(`[SST] [${MODULE_NAME}] Loading template from custom HTML stored in settings.`);
     try {
       const cardStartMarker = "<!-- CARD_TEMPLATE_START -->";
       const cardEndMarker = "<!-- CARD_TEMPLATE_END -->";
@@ -307,14 +309,10 @@ const loadTemplate = async (get_settings, set_settings) => {
       compiledCardTemplate = Handlebars.compile(cardTemplate);
       // Store the template position in a module-level variable for use during rendering
       currentTemplatePosition = templatePosition;
-      console.log(`[SST] [${MODULE_NAME}]`,
-        `Custom HTML template compiled successfully. Position: ${templatePosition}`
-      );
+      DEBUG && console.log(`[SST] [${MODULE_NAME}] Custom HTML template compiled successfully. Position: ${templatePosition}`);
       return; // Exit successfully
     } catch (error) {
-      console.log(`[SST] [${MODULE_NAME}]`,
-        `Error parsing custom HTML template: ${error.message}. Reverting to default file-based template.`
-      );
+      console.error(`[SST] [${MODULE_NAME}] Error parsing custom HTML template: ${error.message}. Reverting to default file-based template.`);
       toastr.error(
         "The custom HTML template could not be parsed. Check its format.",
         "Template Error"
@@ -333,7 +331,7 @@ const loadTemplate = async (get_settings, set_settings) => {
         const presetData = $selectedOption.data("preset");
         
         if (presetData) {
-          console.log(`[SST] [${MODULE_NAME}]`, `Loading template from user preset: ${templateFile}`);
+          DEBUG && console.log(`[SST] [${MODULE_NAME}] Loading template from user preset: ${templateFile}`);
           
           // Extract position metadata from the preset data
           const templatePosition = presetData.templatePosition || "BOTTOM";
@@ -379,15 +377,11 @@ const loadTemplate = async (get_settings, set_settings) => {
           compiledCardTemplate = Handlebars.compile(cardTemplate);
           // Store the template position in a module-level variable for use during rendering
           currentTemplatePosition = templatePosition;
-          console.log(`[SST] [${MODULE_NAME}]`,
-            `User preset '${templateFile}' compiled successfully. Position: ${templatePosition}`
-          );
+          DEBUG && console.log(`[SST] [${MODULE_NAME}] User preset '${templateFile}' compiled successfully. Position: ${templatePosition}`);
           return; // Exit successfully
         }
       } catch (error) {
-        console.log(`[SST] [${MODULE_NAME}]`,
-          `Could not load or parse user preset '${templateFile}'. Using default template.`
-        );
+        console.error(`[SST] [${MODULE_NAME}] Could not load or parse user preset '${templateFile}'. Using default template.`);
       }
     } else {
       // Handle default templates (JSON files)
@@ -403,7 +397,7 @@ const loadTemplate = async (get_settings, set_settings) => {
           throw new Error(`Could not parse JSON for template ${templateFile}: ${jsonError.message}`);
         }
         
-        console.log(`[SST] [${MODULE_NAME}]`, `Loading template from default file: ${defaultPath}`);
+        DEBUG && console.log(`[SST] [${MODULE_NAME}] Loading template from default file: ${defaultPath}`);
 
         // Extract position metadata from the JSON data
         const templatePosition = jsonData.templatePosition || "BOTTOM";
@@ -449,19 +443,15 @@ const loadTemplate = async (get_settings, set_settings) => {
         compiledCardTemplate = Handlebars.compile(cardTemplate);
         // Store the template position in a module-level variable for use during rendering
         currentTemplatePosition = templatePosition;
-        console.log(`[SST] [${MODULE_NAME}]`,
-          `Default template '${templateFile}' compiled successfully. Position: ${templatePosition}`
-        );
+        DEBUG && console.log(`[SST] [${MODULE_NAME}] Default template '${templateFile}' compiled successfully. Position: ${templatePosition}`);
         return; // Exit successfully
       } catch (error) {
-        console.log(`[SST] [${MODULE_NAME}]`,
-          `Could not load or parse default template file '${templateFile}'. Using hardcoded fallback. Error: ${error.message}`
-        );
+        console.error(`[SST] [${MODULE_NAME}] Could not load or parse default template file '${templateFile}'. Using hardcoded fallback. Error: ${error.message}`);
       }
     }
   }
 
-  console.log(`[SST] [${MODULE_NAME}]`, "Using hardcoded fallback template as a last resort.");
+  DEBUG && console.log(`[SST] [${MODULE_NAME}] Using hardcoded fallback template as a last resort.`);
   const fallbackTemplate = `
     <div style="flex:1 1 100%;min-width:380px;max-width:500px;background:red;border-radius:16px;padding:16px;color:#fff;">
         <b>Template Error</b><br>

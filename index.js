@@ -24,6 +24,7 @@ import {
   setGenerationType,
   getGenerationType,
   clearGenerationType,
+  messageDataCache,
   CONTAINER_ID
 } from "./renderer.js";
 
@@ -52,6 +53,7 @@ import {
 
 import {
   log,
+  DEBUG,
   sanitizeFieldKey,
   darkenColor,
   getReactionEmoji,
@@ -522,7 +524,11 @@ cards:
       renderTracker(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString, withSim);
     });
     
-    eventSource.on(event_types.CHAT_CHANGED, wrappedRefreshAllCards);
+    eventSource.on(event_types.CHAT_CHANGED, () => {
+      // Clear cache on chat change to force fresh render
+      if (messageDataCache) messageDataCache.clear();
+      wrappedRefreshAllCards();
+    });
     eventSource.on(event_types.MORE_MESSAGES_LOADED, wrappedRefreshAllCards);
     eventSource.on(event_types.MESSAGE_UPDATED, wrappedRefreshAllCards);
     

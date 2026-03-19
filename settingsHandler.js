@@ -1,7 +1,7 @@
 // settingsHandler.js - SillyTavern settings reading and management
 
 const { extensionSettings, saveSettingsDebounced } = SillyTavern.getContext();
-import { sanitizeFieldKey } from "./utils.js";
+import { sanitizeFieldKey, DEBUG } from "./utils.js";
 import { currentTemplatePosition, unescapeHtml } from "./templating.js";
 import { populateTemplateDropdown } from "./templating.js";
 
@@ -103,17 +103,10 @@ const loadDefaultPromptFromFile = async () => {
   const promptPath = `${get_extension_directory()}/prompts/default-prompt.md`;
   try {
     const response = await $.get(promptPath);
-    console.log(
-      `[SST] [${MODULE_NAME}]`,
-      `Successfully loaded default prompt from ${promptPath}`
-    );
+    DEBUG && console.log(`[SST] [${MODULE_NAME}] Successfully loaded default prompt from ${promptPath}`);
     return response;
   } catch (error) {
-    console.log(
-      `[SST] [${MODULE_NAME}]`,
-      `Error loading default prompt from ${promptPath}. The file might be missing. Error: ${error.statusText}`
-    );
-    console.error(error);
+    console.error(`[SST] [${MODULE_NAME}] Error loading default prompt from ${promptPath}. The file might be missing. Error: ${error.statusText}`, error);
     return null; // Return null on failure
   }
 };
@@ -147,16 +140,10 @@ const loadDefaultTemplate = async () => {
       });
     }
 
-    console.log(
-      `[SST] [${MODULE_NAME}]`,
-      "Successfully loaded default JSON template"
-    );
+    DEBUG && console.log(`[SST] [${MODULE_NAME}] Successfully loaded default JSON template`);
     return true;
   } catch (error) {
-    console.log(
-      `[SST] [${MODULE_NAME}]`,
-      `Error loading default JSON template: ${error.message}`
-    );
+    console.error(`[SST] [${MODULE_NAME}] Error loading default JSON template: ${error.message}`);
     return false;
   }
 };
@@ -182,10 +169,7 @@ const refresh_settings_ui = () => {
 const bind_setting = (selector, key, type) => {
   const element = $(selector);
   if (element.length === 0) {
-    console.log(
-      `[SST] [${MODULE_NAME}]`,
-      `Could not find settings element: ${selector}`
-    );
+    DEBUG && console.log(`[SST] [${MODULE_NAME}] Could not find settings element: ${selector}`);
     return;
   }
   settings_ui_map[key] = [element, type];
@@ -219,7 +203,7 @@ const initialize_settings_listeners = (
   handlePresetImport,
   showManagePresetsModal
 ) => {
-  console.log(`[SST] [${MODULE_NAME}]`, "Binding settings UI elements...");
+  DEBUG && console.log(`[SST] [${MODULE_NAME}] Binding settings UI elements...`);
 
   bind_setting("#isEnabled", "isEnabled", "boolean");
   bind_setting("#codeBlockIdentifier", "codeBlockIdentifier", "text");
@@ -331,7 +315,7 @@ const initialize_settings_listeners = (
   $("#customTemplateUpload").on("change", handleCustomTemplateUpload);
 
   $("#clearCustomTemplateBtn").on("click", async () => {
-    console.log(`[SST] [${MODULE_NAME}]`, "Clearing custom template.");
+    DEBUG && console.log(`[SST] [${MODULE_NAME}] Clearing custom template.`);
     set_settings("customTemplateHtml", "");
     toastr.info("Custom template cleared. Reverted to default.");
     await loadTemplate(); // Reload to apply the selected default
@@ -615,10 +599,7 @@ const initialize_settings = async () => {
         });
       }
     } catch (error) {
-      console.log(
-        `[SST] [${MODULE_NAME}]`,
-        `Error loading default JSON template: ${error.message}`
-      );
+      console.error(`[SST] [${MODULE_NAME}] Error loading default JSON template: ${error.message}`);
     }
   } else {
     // For existing users, if they have selected a default template, load its settings
@@ -651,10 +632,7 @@ const initialize_settings = async () => {
           });
         }
       } catch (error) {
-        console.log(
-          `[SST] [${MODULE_NAME}]`,
-          `Error loading selected default JSON template: ${error.message}`
-        );
+        console.error(`[SST] [${MODULE_NAME}] Error loading selected default JSON template: ${error.message}`);
       }
     }
   }
@@ -665,16 +643,9 @@ const load_settings_html_manually = async () => {
   try {
     const response = await $.get(settingsHtmlPath);
     $("#extensions_settings2").append(response);
-    console.log(
-      `[SST] [${MODULE_NAME}]`,
-      "Settings HTML manually injected into right-side panel."
-    );
+    DEBUG && console.log(`[SST] [${MODULE_NAME}] Settings HTML manually injected into right-side panel.`);
   } catch (error) {
-    console.log(
-      `[SST] [${MODULE_NAME}]`,
-      `Error loading settings.html: ${error.statusText}`
-    );
-    console.error(error);
+    console.error(`[SST] [${MODULE_NAME}] Error loading settings.html: ${error.statusText}`, error);
   }
 };
 
