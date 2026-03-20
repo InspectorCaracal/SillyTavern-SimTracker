@@ -4,14 +4,14 @@ import { messageFormatting } from "../../../../script.js";
 import { extractTemplatePosition, currentTemplatePosition } from "./templating.js";
 import { parseTrackerData } from "./formatUtils.js";
 import { extractDisplayableFields, generateDynamicStatsHtml } from "./fieldMapping.js";
-import { getGlobalVariable, setGlobalVariable } from "../../../variables.js";
 import { DEBUG } from "./utils.js";
+import { processSimData } from "./storage.js";
 
 const MODULE_NAME = "silly-sim-tracker";
 const CONTAINER_ID = "silly-sim-tracker-container";
 
 // Cache for message data hashes to enable selective re-rendering
-export const messageDataCache = new Map();
+const messageDataCache = new Map();
 
 // Global sidebar tracker elements
 let globalLeftSidebar = null;
@@ -45,205 +45,11 @@ const clearGenerationType = () => {
   generationType = null;
 }
 
-// Process data synchronization for characters with data sync enabled
-function processCharacterDataSync(worldData, characterList) {
-  console.log("[SST] initiating data persist")
-
-  // update world data variables first
-  Object.keys(worldData).forEach(key => {
-    const variableName = `worldData_${key}`;
-    setGlobalVariable(variableName, JSON.stringify(worldData[key]));
-  })
-
-  characterList.forEach(character => {
-    const { name, ...stats } = character;
-    
-    // Check if the character has data sync enabled (any boolean key that enables sync)
-    const enableSync = stats.enableDataSync || stats.dataSync || stats.syncData || stats.trackChanges;
-    
-    if (!enableSync) return; // Skip if sync is not enabled for this character
-    
-    // Define keys that should not be synced (display/system keys)
-    const excludedKeys = ['bg', 'bgColor', 'color', 'internal_thought', 'thought', 'last_react', 'enableDataSync', 'dataSync', 'syncData', 'trackChanges'];
-    
-    // First pass: Process direct value assignments for non-excluded keys
-    Object.keys(stats).forEach(key => {
-      if (!key.endsWith('Change') && !excludedKeys.includes(key)) {
-        const value = stats[key];
-        const variableName = `${name}_${key}`;
-        
-        try {
-          // Handle numeric values
-          if (typeof value === 'number') {
-            setGlobalVariable(variableName, value);
-            console.log(`[SST] [${MODULE_NAME}]`, 
-              `Set ${variableName} to: ${value}`);
-          }
-          // Handle arrays/lists
-          else if (Array.isArray(value)) {
-            setGlobalVariable(variableName, JSON.stringify(value));
-            console.log(`[SST] [${MODULE_NAME}]`, 
-              `Set list ${variableName} to: [${value.join(', ')}]`);
-          }
-          // Handle other values (strings, etc.)
-          else if (value !== null && value !== undefined) {
-            setGlobalVariable(variableName, value);
-            console.log(`[SST] [${MODULE_NAME}]`, 
-              `Set ${variableName} to: ${value}`);
-          }
-        } catch (error) {
-          console.error(`[SST] [${MODULE_NAME}]`, 
-            `Error setting variable ${variableName}:`, error);
-        }
-      }
-    });
-    
-    // Second pass: Process xChange keys only if their base key is NOT present
-    Object.keys(stats).forEach(key => {
-      if (key.endsWith('Change')) {
-        const baseKey = key.replace('Change', ''); // e.g., 'apChange' -> 'ap'
-        
-        // Only process the change if the base key is NOT present in the data
-        if (!(baseKey in character)) {
-          const changeValue = stats[key];
-          const variableName = `${name}_${baseKey}`;
-          
-          try {
-            // Handle numeric changes
-            if (typeof changeValue === 'number' && changeValue !== 0) {
-              // Get current value or initialize to 0
-              const currentValue = getGlobalVariable(variableName) || 0;
-              const newValue = Number(currentValue) + changeValue;
-              
-              // Set the updated value
-              setGlobalVariable(variableName, newValue);
-              
-              console.log(`[SST] [${MODULE_NAME}]`, 
-                `Updated ${variableName}: ${currentValue} + ${changeValue} = ${newValue}`);
-            }
-            // Handle list modifications
-            else if (typeof changeValue === 'object' && changeValue !== null) {
-              // Get current list or initialize to empty array
-              let currentList;
-              try {
-                const currentValue = getGlobalVariable(variableName);
-                currentList = currentValue ? JSON.parse(currentValue) : [];
-                if (!Array.isArray(currentList)) {
-                  currentList = [];
-                }
-              } catch (parseError) {
-                console.log(`[SST] [${MODULE_NAME}]`, 
-                  `Could not parse existing list for ${variableName}, initializing as empty array`);
-                currentList = [];
-              }
-              
-              let modified = false;
-              
-              // Handle additions
-              if (changeValue.add && Array.isArray(changeValue.add)) {
-                changeValue.add.forEach(item => {
-                  if (!currentList.includes(item)) {
-                    currentList.push(item);
-                    modified = true;
-                    console.log(`[SST] [${MODULE_NAME}]`, 
-                      `Added "${item}" to ${variableName}`);
-                  }
-                });
-              }
-              
-              // Handle removals
-              if (changeValue.remove && Array.isArray(changeValue.remove)) {
-                changeValue.remove.forEach(item => {
-                  const index = currentList.indexOf(item);
-                  if (index > -1) {
-                    currentList.splice(index, 1);
-                    modified = true;
-                    console.log(`[SST] [${MODULE_NAME}]`, 
-                      `Removed "${item}" from ${variableName}`);
-                  }
-                });
-              }
-              
-              // Save the updated list if it was modified
-              if (modified) {
-                setGlobalVariable(variableName, JSON.stringify(currentList));
-                console.log(`[SST] [${MODULE_NAME}]`, 
-                  `Updated list ${variableName}: [${currentList.join(', ')}]`);
-              }
-            }
-          } catch (error) {
-            console.error(`[SST] [${MODULE_NAME}]`, 
-              `Error updating variable ${variableName}:`, error);
-          }
-        } else {
-          console.log(`[SST] [${MODULE_NAME}]`, 
-            `Skipping ${key} because ${baseKey} is present in data`);
-        }
-      }
-    });
-  });
-}
-
-// Backfill missing base keys with their corresponding global variable values
-function backfillMissingKeys(characterList, withSim) {
-  const retrieveValue = withSim ? getGlobalVariable : (varname) => "?";
-
-  characterList.forEach(character => {
-    const { name, ...stats } = character;
-    
-    // Find all xChange keys and check if corresponding base keys are missing
-    Object.keys(stats).forEach(key => {
-      if (key.endsWith('Change')) {
-        const baseKey = key.replace('Change', ''); // e.g., 'apChange' -> 'ap'
-        
-        // If the base key is missing from the character data
-        if (!(baseKey in character)) {
-          const variableName = `${name}_${baseKey}`;
-          // Determine data type by the change to apply
-          const isList = stats[key].add || stats[key].remove;
-          
-          try {
-            const storedValue = retrieveValue(variableName);
-            
-            if (isList) {
-              let parsed = false;
-              if (storedValue) {
-                try {
-                  const parsedList = JSON.parse(storedValue);
-                  if (Array.isArray(parsedList)) {
-                    character[baseKey] = parsedList;
-                    console.log(`[SST] [${MODULE_NAME}]`, 
-                      `Backfilled ${baseKey} for ${name} with stored list: [${parsedList.join(', ')}]`);
-                    parsed = true;
-                  }
-                } catch (parseError) {
-                  console.log(`[SST] [${MODULE_NAME}]`, 
-                    `Could not parse stored list for ${baseKey}`);
-                }
-              }
-              if (!parsed) {
-                // just represent the changes
-                console.log(stats[key]);
-                character[baseKey] = stats[key].add ? stats[key].add.map(item => { return {'name': item, 'change': 'add'}}) : [];
-                character[baseKey].push(...( stats[key].remove ? stats[key].remove.map(item => { return {'name': item, 'change': 'remove'}}) : []));
-                console.log(character[baseKey]);
-              }
-            }
-            // For other stored values, use as-is
-            else {
-              character[baseKey] = storedValue;
-              console.log(`[SST] [${MODULE_NAME}]`, 
-                `Backfilled ${baseKey} for ${name} with stored value: ${storedValue}`);
-            }
-          } catch (error) {
-            console.error(`[SST] [${MODULE_NAME}]`, 
-              `Error backfilling ${baseKey} for ${name}:`, error);
-          }
-        }
-      }
-    });
-  });
-}
+// Character data is now persisted to chat metadata via storage.js
+// See processSimData() for the merge logic that handles:
+// - Direct value assignments (replace)
+// - Change operations (increment/decrement)
+// - List operations (add/remove)
 
 // Helper function to build template context data for characters
 function buildTemplateContext(characterList, worldData, templateConfig) {
@@ -909,13 +715,13 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
 
       if (!characterList.length) return;
 
-      // Integrate globalvar data persistence
+      // Persist data to chat metadata
       if (withSim) {
-        // Process xChange keys for data synchronization
-        processCharacterDataSync(worldData, characterList);
+        processSimData({
+          worldData: worldData,
+          cards: characterList
+        });
       }
-      // Backfill missing base keys with stored values
-      backfillMissingKeys(characterList, withSim);
 
       // For tabbed templates, we need to pass all cards to the template
       const templateFile = get_settings("templateFile");
@@ -1035,11 +841,8 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
                   
                   // Process character data for this block only
                   if (blockCharacters.length > 0) {
-                    if (withSim) {
-                      // Use merged world data for processing, not just block data
-                      processCharacterDataSync(worldData, blockCharacters);
-                    }
-                    backfillMissingKeys(blockCharacters, withSim);
+                    // Note: Data persistence happens once at the message level,
+                    // not per-block in inline mode
                     
                     // Build template configuration - use merged world data for complete context  
                     const blockTemplateConfig = {
@@ -1183,8 +986,6 @@ export {
   setGenerationType,
   getGenerationType,
   clearGenerationType,
-  processCharacterDataSync,
-  backfillMissingKeys,
   buildTemplateContext,
   CONTAINER_ID
 };

@@ -5,6 +5,7 @@ import {
   Generate,
 } from "../../../../script.js";
 import { MacrosParser } from "../../../macros.js";
+import { MacroRegistry, MacroCategory, MacroValueType } from "../../../macros/engine/MacroRegistry.js"
 import { SlashCommand } from "../../../slash-commands/SlashCommand.js";
 import { SlashCommandParser } from "../../../slash-commands/SlashCommandParser.js";
 
@@ -67,6 +68,18 @@ import {
   parseTrackerData,
   generateTrackerBlock
 } from "./formatUtils.js";
+
+import {
+  initMetadata,
+  getMetadata,
+  saveMetadata,
+  getCardData,
+  getAllCards,
+  getCardNames,
+  getWorldData,
+  migrateChatToMetadata,
+  isMetadataInitialized
+} from "./storage.js";
 
 const MODULE_NAME = "silly-sim-tracker";
 
@@ -131,6 +144,10 @@ jQuery(async () => {
     log("Settings UI refreshed with existing values.");
     
     await wrappedLoadTemplate();
+
+    // Initialize metadata storage
+    initMetadata();
+    log("Metadata storage initialized.");
 
     // Set up MutationObserver to hide sim code blocks as they stream in
     log("Setting up MutationObserver for in-flight sim block hiding...");
@@ -372,6 +389,124 @@ ${exampleJson}
       // We'll return an empty string as the position is handled during rendering
       return "";
     });
+
+    // Register metadata-based macros for accessing accumulated card data
+    MacroRegistry.registerMacro('sim_current', {
+      category: MacroCategory.CHARACTER,
+      unnamedArgs: [
+        {
+          name: 'card',
+          type: MacroValueType.STRING,
+          description: 'Card name',
+        },
+        {
+          name: 'field',
+          type: MacroValueType.STRING,
+          description: 'Field name (e.g., ap, dp, relationshipStatus). If omitted, returns all card data.',
+          optional: true,
+        },
+      ],
+      description: 'Returns the current accumulated value for a specific card field, or all card data if field is omitted.',
+      returns: 'The field value as a string, or JSON object of all data.',
+      exampleUsage: ['{{sim_current::Alice::ap}}', '{{sim_current::Alice}}', '{{sim_current::Bob::relationshipStatus}}'],
+      handler: ({ unnamedArgs: [cardName, fieldName] }) => {
+        if (!get_settings("isEnabled")) return "";
+        
+        if (!cardName) {
+          log("sim_current macro requires at least a card name: {{sim_current::card}}");
+          return "";
+        }
+        
+        const cardData = getCardData(cardName);
+        if (!cardData) {
+          return "";
+        }
+        
+        // If field is specified, return just that field
+        if (fieldName && cardData[fieldName] !== undefined) {
+          const value = cardData[fieldName];
+          log(`Processed {{sim_current::${cardName}::${fieldName}}} = ${value}`);
+          
+          // Return the value as a string
+          if (Array.isArray(value)) {
+            return value.join(', ');
+          }
+          return String(value);
+        }
+        
+        // If no field specified, return all card data as formatted text
+        log(`Processed {{sim_current::${cardName}}} = all data`);
+        
+        // Format all data as a readable list
+        const dataEntries = Object.entries(cardData)
+          .filter(([key]) => key !== 'name') // Skip the name field since it's the header
+          .map(([key, value]) => {
+            if (Array.isArray(value)) {
+              return `${key}: ${value.join(', ')}`;
+            }
+            return `${key}: ${value}`;
+          });
+        
+        return dataEntries.join('\n');
+      },
+    });
+
+    MacroRegistry.registerMacro('sim_cards', {
+      category: MacroCategory.CHARACTER,
+      unnamedArgs: [],
+      description: 'Returns a comma-separated list of all tracked card names.',
+      returns: 'Comma-separated list of card names.',
+      exampleUsage: ['{{sim_cards}}'],
+      handler: () => {
+        if (!get_settings("isEnabled")) return "";
+        
+        const names = getCardNames() || [];
+        log(`Processed {{sim_cards}} = ${names.join(', ')}`);
+        
+        return names.join(',');
+      },
+    });
+
+    MacroRegistry.registerMacro('sim_world', {
+      category: MacroCategory.WORLD,
+      unnamedArgs: [
+        {
+          name: 'key',
+          optional: true,
+          type: MacroValueType.STRING,
+          description: 'World data key (e.g., current_date, current_time). If omitted, returns all world data.',
+        },
+      ],
+      description: 'Returns the current accumulated world data value for a specific key, or all world data if key is omitted.',
+      returns: 'The world data value as a string, or formatted list of all world data.',
+      exampleUsage: ['{{sim_world::current_date}}', '{{sim_world}}', '{{sim_world::current_time}}'],
+      handler: ({ unnamedArgs: [key] }) => {
+        if (!get_settings("isEnabled")) return "";
+        
+        const worldData = getWorldData();
+        
+        // If key is specified, return just that value
+        if (key && worldData[key] !== undefined) {
+          const value = worldData[key];
+          log(`Processed {{sim_world::${key}}} = ${value}`);
+          return String(value);
+        }
+        
+        // If no key specified, return all world data as formatted text
+        log(`Processed {{sim_world}} = all data`);
+        
+        const dataEntries = Object.entries(worldData)
+          .map(([k, value]) => {
+            if (Array.isArray(value)) {
+              return `${k}: ${value.join(', ')}`;
+            }
+            return `${k}: ${value}`;
+          });
+        
+        return dataEntries.join('\n');
+      },
+    });
+
     log("Macros registered successfully.");
 
     // Register the slash command for adding sim data to messages
@@ -500,6 +635,253 @@ cards:
       })
     );
 
+    // Register slash command for metadata migration
+    SlashCommandParser.addCommandObject(
+      SlashCommand.fromProps({
+        name: "sst-init-metadata",
+        callback: async (args, value) => {
+          if (!get_settings("isEnabled")) {
+            return "Silly Sim Tracker is not enabled.";
+          }
+
+          const context = getContext();
+          if (!context || !context.chat || context.chat.length === 0) {
+            return "No chat history found to migrate.";
+          }
+
+          // Use provided identifier, or fall back to settings, or default to "sim"
+          const identifier = value || get_settings("codeBlockIdentifier") || "sim";
+
+          if (confirm(`This will RESET the metadata storage and rescan all messages for code blocks with identifier "${identifier}". Any existing accumulated card data will be wiped and rebuilt from chat history. Continue?`)) {
+            try {
+              // Always clear the metadata first
+              const storage = getMetadata();
+              storage.cards = {};
+              storage.worldData = {};
+              saveMetadata();
+              log("Metadata storage reset.");
+              
+              const count = await migrateChatToMetadata(identifier);
+              return `Migration complete! Processed ${count} sim data blocks with identifier "${identifier}". Metadata storage has been reset and populated.`;
+            } catch (error) {
+              log(`Error in /sst-init-metadata: ${error.message}`);
+              return `Error during migration: ${error.message}`;
+            }
+          }
+          return "Migration cancelled.";
+        },
+        returns: "status message",
+        unnamedArgumentList: [
+          {
+            name: "identifier",
+            type: "string",
+            description: "Code block identifier to search for (e.g., 'sim', 'tracker'). Uses settings value if not specified.",
+            optional: true,
+          }
+        ],
+        helpString: `
+                <div>
+                    Resets metadata storage and rescans all messages to populate it with accumulated card data.
+                </div>
+                <div>
+                    <strong>Examples:</strong>
+                    <ul>
+                        <li>
+                            <pre><code class="language-stscript">/sst-init-metadata</code></pre>
+                            Resets and migrates using the code block identifier from settings
+                        </li>
+                        <li>
+                            <pre><code class="language-stscript">/sst-init-metadata tracker</code></pre>
+                            Resets and migrates using "tracker" as the code block identifier
+                        </li>
+                    </ul>
+                </div>
+            `,
+      })
+    );
+
+    // Register slash command for manually setting card data
+    SlashCommandParser.addCommandObject(
+      SlashCommand.fromProps({
+        name: "sst-set-card",
+        callback: async (args) => {
+          if (!get_settings("isEnabled")) {
+            return "Silly Sim Tracker is not enabled.";
+          }
+
+          const cardName = args.card;
+          const fieldName = args.field;
+          let value = args.value;
+
+          if (!cardName || !fieldName) {
+            return "Usage: /sst-set-card card=<name> field=<field> [value=<value>]";
+          }
+
+          // Check if value is blank/null/undefined - if so, remove the field
+          const isRemovingField = value === undefined || value === null || value === '';
+
+          if (!isRemovingField) {
+            // Try to parse value as number if it looks like one
+            if (value && !isNaN(value) && !isNaN(parseFloat(value))) {
+              value = parseFloat(value);
+            }
+          }
+
+          try {
+            // Import storage functions dynamically
+            const { updateCardData, getCardData, getMetadata, saveMetadata } = await import("./storage.js");
+            
+            if (isRemovingField) {
+              // Remove the field
+              const cardData = getCardData(cardName);
+              if (cardData && cardData[fieldName] !== undefined) {
+                // Get the storage object and delete from the internal data structure
+                const storage = getMetadata();
+                if (storage.cards[cardName] && storage.cards[cardName].data) {
+                  delete storage.cards[cardName].data[fieldName];
+                  saveMetadata();
+                  log(`Removed field ${cardName}.${fieldName}`);
+                  return `Removed ${cardName}.${fieldName}`;
+                }
+              }
+              return `Field ${cardName}.${fieldName} not found.`;
+            } else {
+              // Set the field value
+              const existingData = getCardData(cardName) || {};
+              existingData[fieldName] = value;
+              
+              // Update the card data
+              updateCardData(cardName, existingData);
+              
+              log(`Manually set ${cardName}.${fieldName} = ${value}`);
+              return `Set ${cardName}.${fieldName} = ${value}`;
+            }
+          } catch (error) {
+            log(`Error in /sst-set-card: ${error.message}`);
+            return `Error: ${error.message}`;
+          }
+        },
+        returns: "status message",
+        namedArgumentList: [
+          {
+            name: "card",
+            type: "string",
+            description: "Card name",
+          },
+          {
+            name: "field",
+            type: "string",
+            description: "Field name to set",
+          },
+          {
+            name: "value",
+            type: "string",
+            description: "Value to set (will be parsed as number if numeric). Leave blank to remove the field.",
+            isRequired: false,
+          },
+        ],
+        helpString: `
+                <div>
+                    Manually sets or removes a card field value in the metadata storage.
+                </div>
+                <div>
+                    <strong>Examples:</strong>
+                    <ul>
+                        <li>
+                            <pre><code class="language-stscript">/sst-set-card card=Alice field=ap value=50</code></pre>
+                            Sets Alice's AP to 50
+                        </li>
+                        <li>
+                            <pre><code class="language-stscript">/sst-set-card card=Bob field=relationshipStatus value=Friendly</code></pre>
+                            Sets Bob's relationship status
+                        </li>
+                        <li>
+                            <pre><code class="language-stscript">/sst-set-card card=Alice field=tempBuff</code></pre>
+                            Removes the tempBuff field from Alice
+                        </li>
+                    </ul>
+                </div>
+            `,
+      })
+    );
+
+    // Register slash command for removing a card
+    SlashCommandParser.addCommandObject(
+      SlashCommand.fromProps({
+        name: "sst-remove-card",
+        callback: async (args, value) => {
+          if (!get_settings("isEnabled")) {
+            return "Silly Sim Tracker is not enabled.";
+          }
+
+          const cardName = value || args.card;
+
+          if (!cardName) {
+            return "Usage: /sst-remove-card <card_name> or /sst-remove-card card=<name>";
+          }
+
+          if (confirm(`Are you sure you want to remove all data for card "${cardName}"? This cannot be undone.`)) {
+            try {
+              // Import storage functions dynamically
+              const { getMetadata, saveMetadata, getCardData } = await import("./storage.js");
+              
+              // Check if card exists
+              const cardData = getCardData(cardName);
+              if (!cardData) {
+                return `Card "${cardName}" not found in metadata.`;
+              }
+              
+              // Remove the card
+              const storage = getMetadata();
+              delete storage.cards[cardName];
+              saveMetadata();
+              
+              log(`Removed card ${cardName} from metadata`);
+              return `Card "${cardName}" has been removed from metadata storage.`;
+            } catch (error) {
+              log(`Error in /sst-remove-card: ${error.message}`);
+              return `Error: ${error.message}`;
+            }
+          }
+          return "Removal cancelled.";
+        },
+        returns: "status message",
+        unnamedArgumentList: [
+          {
+            name: "card",
+            type: "string",
+            description: "Card name to remove",
+            optional: true,
+          }
+        ],
+        namedArgumentList: [
+          {
+            name: "card",
+            type: "string",
+            description: "Card name to remove",
+          }
+        ],
+        helpString: `
+                <div>
+                    Removes a card and all its data from the metadata storage.
+                </div>
+                <div>
+                    <strong>Examples:</strong>
+                    <ul>
+                        <li>
+                            <pre><code class="language-stscript">/sst-remove-card Alice</code></pre>
+                            Removes Alice from metadata
+                        </li>
+                        <li>
+                            <pre><code class="language-stscript">/sst-remove-card card=Bob</code></pre>
+                            Removes Bob from metadata
+                        </li>
+                    </ul>
+                </div>
+            `,
+      })
+    );
+
     const context = getContext();
     const { eventSource, event_types } = context;
 
@@ -537,15 +919,18 @@ cards:
       renderTrackerWithoutSim(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString);
     });
     
-    eventSource.on(event_types.MESSAGE_SWIPE, (mesId) => {
-      log(
-        `Message swipe detected for message ID ${mesId}. Updating last_sim_stats macro.`
-      );
-      const updatedStats = updateLastSimStatsOnRegenerateOrSwipe(mesId, get_settings);
-      if (updatedStats) {
-        lastSimJsonString = updatedStats;
-      }
-    });
+    // MESSAGE_SWIPE is not available in all ST versions
+    if (event_types.MESSAGE_SWIPE) {
+      eventSource.on(event_types.MESSAGE_SWIPE, (mesId) => {
+        log(
+          `Message swipe detected for message ID ${mesId}. Updating last_sim_stats macro.`
+        );
+        const updatedStats = updateLastSimStatsOnRegenerateOrSwipe(mesId, get_settings);
+        if (updatedStats) {
+          lastSimJsonString = updatedStats;
+        }
+      });
+    }
 
     // Listen for generation ended event to update sidebars
     eventSource.on(event_types.GENERATION_ENDED, () => {
