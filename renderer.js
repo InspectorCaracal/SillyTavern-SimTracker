@@ -518,10 +518,25 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
     );
     if (!messageElement) return;
 
-    // Parse the sim data from the original message content
+    // Parse the sim data from the message content
+    // Try the DOM first as it's more up-to-date during streaming
     const identifier = get_settings("codeBlockIdentifier");
     const jsonRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
-    const matches = message.mes.match(jsonRegex);
+    
+    // Get text content from DOM to ensure we have the latest during streaming
+    const domText = messageElement.textContent || '';
+    const domMatches = domText.match(jsonRegex);
+    
+    // Also check the message object as fallback
+    const mesMatches = message.mes.match(jsonRegex);
+    
+    // Use DOM matches if found, otherwise fall back to message.mes
+    // This handles the timing issue where DOM is updated before chat array
+    const matches = domMatches && domMatches.length > 0 ? domMatches : mesMatches;
+    
+    if (matches && matches.length > 0) {
+      DEBUG && console.log(`[SST] [${MODULE_NAME}] Found ${matches.length} sim block(s) for message ${mesId} (from ${domMatches && domMatches.length > 0 ? 'DOM' : 'message.mes'})`);
+    }
     
     // Selective re-rendering: check if data has changed
     const dataHash = matches ? matches.join('|') : '';
