@@ -64,6 +64,15 @@ const getWorldData = () => {
   return { ...storage.worldData };
 };
 
+// Check if a value is an operation object (has add, subtract, remove, or icon keys)
+const isOperationObject = (value) => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const operationKeys = ['add', 'subtract', 'remove', 'icon', 'value'];
+  return Object.keys(value).some(key => operationKeys.includes(key));
+};
+
 // Update card data with merge logic
 const updateCardData = (cardName, stats) => {
   const storage = getMetadata();
@@ -84,6 +93,16 @@ const updateCardData = (cardName, stats) => {
     // Skip the name field (already stored)
     if (key === 'name') return;
     
+    // Skip old suffix-based operation keys (deprecated)
+    if (key.endsWith('Add') || key.endsWith('Remove') || key.endsWith('Change')) {
+      return;
+    }
+    
+    // Skip old icon-related keys (deprecated)
+    if (key === 'icons' || key.endsWith('Icon') || key.endsWith('_icon') || key.startsWith('icon_')) {
+      return;
+    }
+    
     // Skip display/system keys
     if (['bg', 'bgColor', 'color', 'internal_thought', 'thought', 'last_react'].includes(key)) {
       return;
@@ -91,59 +110,50 @@ const updateCardData = (cardName, stats) => {
     
     const value = stats[key];
     
-    // Handle list add operations (e.g., inventoryAdd)
-    if (key.endsWith('Add') && Array.isArray(value)) {
-      const baseKey = key.slice(0, -3); // Remove 'Add' suffix
-      if (!cardData[baseKey]) {
-        cardData[baseKey] = [];
-      }
-      if (!Array.isArray(cardData[baseKey])) {
-        cardData[baseKey] = [cardData[baseKey]];
-      }
-      // Append new items
-      value.forEach(item => {
-        if (!cardData[baseKey].includes(item)) {
-          cardData[baseKey].push(item);
+    // Handle new unified operation object format
+    if (isOperationObject(value)) {
+      // Initialize field if not exists
+      if (cardData[key] === undefined) {
+        // Determine if this should be a number or array based on operations
+        if (value.add !== undefined || value.subtract !== undefined) {
+          cardData[key] = 0;
+        } else if (value.remove !== undefined) {
+          cardData[key] = [];
         }
-      });
-    }
-    // Handle list remove operations (e.g., inventoryRemove)
-    else if (key.endsWith('Remove') && Array.isArray(value)) {
-      const baseKey = key.slice(0, -6); // Remove 'Remove' suffix
-      if (cardData[baseKey] && Array.isArray(cardData[baseKey])) {
-        // Remove specified items
-        cardData[baseKey] = cardData[baseKey].filter(item => !value.includes(item));
       }
-    }
-    // Handle change operations (e.g., apChange)
-    else if (key.endsWith('Change')) {
-      const baseKey = key.slice(0, -6); // Remove 'Change' suffix
-      const changeValue = value;
       
-      if (typeof changeValue === 'number') {
-        // Numeric change - add to existing or initialize
-        const currentValue = typeof cardData[baseKey] === 'number' ? cardData[baseKey] : 0;
-        cardData[baseKey] = currentValue + changeValue;
-      }
-      else if (typeof changeValue === 'object' && changeValue !== null) {
-        // List change operations
-        if (!cardData[baseKey]) {
-          cardData[baseKey] = [];
+      // Handle numeric operations (add/subtract)
+      if (typeof cardData[key] === 'number') {
+        if (typeof value.add === 'number') {
+          cardData[key] += value.add;
         }
-        if (!Array.isArray(cardData[baseKey])) {
-          cardData[baseKey] = [cardData[baseKey]];
+        if (typeof value.subtract === 'number') {
+          cardData[key] -= value.subtract;
+        }
+        // Handle explicit value override
+        if (value.value !== undefined && typeof value.value === 'number') {
+          cardData[key] = value.value;
+        }
+      }
+      
+      // Handle array operations (add/remove)
+      if (Array.isArray(cardData[key]) || value.add !== undefined || value.remove !== undefined) {
+        if (!Array.isArray(cardData[key])) {
+          cardData[key] = cardData[key] !== undefined ? [cardData[key]] : [];
         }
         
-        // Handle add/remove within the change object
-        if (changeValue.add && Array.isArray(changeValue.add)) {
-          changeValue.add.forEach(item => {
-            if (!cardData[baseKey].includes(item)) {
-              cardData[baseKey].push(item);
+        if (value.add !== undefined) {
+          const itemsToAdd = Array.isArray(value.add) ? value.add : [value.add];
+          itemsToAdd.forEach(item => {
+            if (!cardData[key].includes(item)) {
+              cardData[key].push(item);
             }
           });
         }
-        if (changeValue.remove && Array.isArray(changeValue.remove)) {
-          cardData[baseKey] = cardData[baseKey].filter(item => !changeValue.remove.includes(item));
+        
+        if (value.remove !== undefined) {
+          const itemsToRemove = Array.isArray(value.remove) ? value.remove : [value.remove];
+          cardData[key] = cardData[key].filter(item => !itemsToRemove.includes(item));
         }
       }
     }

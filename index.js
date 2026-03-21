@@ -327,20 +327,48 @@ jQuery(async () => {
       log("Processed {{sim_format}} macro.");
 
       if (format === "yaml") {
-        // Generate YAML example structure with the new format
-        let exampleYaml = "worldData:\n";
+        // Generate YAML example structure with the new unified format
+        let exampleYaml = "# Example with unified field structure (RECOMMENDED)\n";
+        exampleYaml += "# Icons and operations are defined right with the field\n";
+        exampleYaml += "worldData:\n";
         exampleYaml += "  current_date: \"[CURRENT_STORY_DATE]\"  # YYYY-MM-DD\n";
         exampleYaml += "  current_time: \"[CURRENT_STORY_TIME]\"  # 24-hour time (e.g., 21:34, 10:21)\n";
         exampleYaml += "cards:\n";
         exampleYaml += "  - name: \"[CHARACTER_NAME]\"\n";
+        exampleYaml += "    # Example 1: Simple value (backwards compatible)\n";
+        exampleYaml += "    # ap: 75\n";
+        exampleYaml += "    \n";
+        exampleYaml += "    # Example 2: With operations and icon (NEW - RECOMMENDED)\n";
+        exampleYaml += "    ap:\n";
+        exampleYaml += "      value: 75        # Current value\n";
+        exampleYaml += "      icon: \"💖\"     # Custom icon\n";
+        exampleYaml += "      add: 5           # Increase by 5 (shows +5 change indicator)\n";
+        exampleYaml += "      # OR use: subtract: 3 to decrease by 3\n";
+        exampleYaml += "    \n";
+        exampleYaml += "    # Example 3: List field with operations\n";
+        exampleYaml += "    inventory:\n";
+        exampleYaml += "      add:              # Add items\n";
+        exampleYaml += "        - Sword\n";
+        exampleYaml += "        - Shield\n";
+        exampleYaml += "      remove:           # Remove items\n";
+        exampleYaml += "        - Rusty Dagger\n";
+        exampleYaml += "    \n";
+        exampleYaml += "    # Example 4: Hidden field (not displayed on card)\n";
+        exampleYaml += "    secretValue:\n";
+        exampleYaml += "      value: 100\n";
+        exampleYaml += "      hidden: true    # Won't appear on the card\n";
 
-        // Add each custom field as a commented key-value pair
-        fields.forEach((field) => {
-          const sanitizedKey = sanitizeFieldKey(field.key);
-          exampleYaml += `    ${sanitizedKey}: [${sanitizedKey.toUpperCase()}_VALUE]  # ${
-            field.description
-          }\n`;
-        });
+        // Add each custom field as additional examples
+        if (fields.length > 0) {
+          exampleYaml += "    \n";
+          exampleYaml += "    # Additional custom fields:\n";
+          fields.slice(0, 5).forEach((field) => {  // Limit to first 5 to avoid overwhelming
+            const sanitizedKey = sanitizeFieldKey(field.key);
+            if (!['ap', 'inventory'].includes(sanitizedKey)) {
+              exampleYaml += `    # ${sanitizedKey}: [${sanitizedKey.toUpperCase()}_VALUE]  # ${field.description}\n`;
+            }
+          });
+        }
 
         exampleYaml += "  # Add additional character objects here as needed\n";
 
@@ -351,23 +379,55 @@ ${exampleYaml}\`\`\``;
       } else {
         // Generate JSON example structure with the new format
         let exampleJson = "{\n";
+        exampleJson += "  // Example with unified field structure (RECOMMENDED)\n";
+        exampleJson += "  // Icons and operations are defined right with the field\n";
         exampleJson += "  \"worldData\": {\n";
         exampleJson += "    \"current_date\": \"[CURRENT_STORY_DATE]\", // YYYY-MM-DD\n";
-        exampleJson += "    \"current_time\": \"[CURRENT_STORY_TIME]\" // 24-hour time (e.g., 21:34, 10:21)\n";
+        exampleJson += "    \"current_time\": \"[CURRENT_STORY_TIME]\" // 24-hour time\n";
         exampleJson += "  },\n";
         exampleJson += "  \"cards\": [\n";
         exampleJson += "    {\n";
         exampleJson += "      \"name\": \"[CHARACTER_NAME]\",\n";
+        exampleJson += "      // Example 1: Simple value (backwards compatible)\n";
+        exampleJson += "      // \"ap\": 75,\n";
+        exampleJson += "      \n";
+        exampleJson += "      // Example 2: With operations and icon (NEW - RECOMMENDED)\n";
+        exampleJson += "      \"ap\": {\n";
+        exampleJson += "        \"value\": 75,      // Current value\n";
+        exampleJson += "        \"icon\": \"💖\",   // Custom icon\n";
+        exampleJson += "        \"add\": 5         // Increase by 5 (shows +5 change)\n";
+        exampleJson += "        // OR use: \"subtract\": 3 to decrease\n";
+        exampleJson += "      },\n";
+        exampleJson += "      \n";
+        exampleJson += "      // Example 3: List field with operations\n";
+        exampleJson += "      \"inventory\": {\n";
+        exampleJson += "        \"add\": [\"Sword\", \"Shield\"],      // Add items\n";
+        exampleJson += "        \"remove\": [\"Rusty Dagger\"]       // Remove items\n";
+        exampleJson += "      },\n";
+        exampleJson += "      \n";
+        exampleJson += "      // Example 4: Hidden field (not displayed on card)\n";
+        exampleJson += "      \"secretValue\": {\n";
+        exampleJson += "        \"value\": 100,\n";
+        exampleJson += "        \"hidden\": true  // Won't appear on the card\n";
+        exampleJson += "      }"
 
-        // Add each custom field as a commented key-value pair
-        fields.forEach((field) => {
-          const sanitizedKey = sanitizeFieldKey(field.key);
-          exampleJson += `      "${sanitizedKey}": [${sanitizedKey.toUpperCase()}_VALUE], // ${
-            field.description
-          }\n`;
-        });
+        // Add each custom field as additional examples
+        if (fields.length > 0) {
+          exampleJson += ",\n      \n";
+          exampleJson += "      // Additional custom fields:\n";
+          const additionalFields = fields.filter(f => {
+            const key = sanitizeFieldKey(f.key);
+            return !['ap', 'inventory'].includes(key);
+          }).slice(0, 5);
+          
+          additionalFields.forEach((field, index) => {
+            const sanitizedKey = sanitizeFieldKey(field.key);
+            exampleJson += `      // "${sanitizedKey}": [${sanitizedKey.toUpperCase()}_VALUE], // ${field.description}`;
+            if (index < additionalFields.length - 1) exampleJson += "\n";
+          });
+        }
 
-        exampleJson += "    }\n";
+        exampleJson += "\n    }\n";
         exampleJson += "    // Add additional character objects here as needed\n";
         exampleJson += "  ]\n";
         exampleJson += "}";

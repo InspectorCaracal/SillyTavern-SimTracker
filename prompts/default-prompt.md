@@ -14,7 +14,56 @@ When using the MACRO position for templates, you can place the {{sim_tracker_pos
    - ONLY AFTER narrative content, output tracker block
    - FINALLY output sim codeblock
 
-2. **Relationship Meters**:
+2. **Unified Field Structure** (NEW - RECOMMENDED):
+
+All fields now support a unified object structure that combines values, operations, and icons in one place:
+
+**Basic Values** (backwards compatible):
+```yaml
+ap: 50
+inventory:
+  - Sword
+  - Shield
+```
+
+**With Operations** (modifies existing values):
+```yaml
+ap:
+  add: 5          # Increases AP by 5
+  # OR
+  subtract: 3     # Decreases AP by 3
+  # OR
+  value: 75       # Sets AP directly to 75
+
+inventory:
+  add:
+    - Potion
+  remove:
+    - Rusty Sword
+```
+
+**With Icons** (customizes the display icon):
+```yaml
+ap:
+  value: 75
+  icon: "💖"     # Custom icon for this field
+  add: 5          # Also performs operation
+```
+
+**Hidden Fields** (hide from display):
+```yaml
+secretValue:
+  value: 100
+  hidden: true    # This field won't appear on the card
+```
+
+**Key Benefits:**
+- Icons are defined right next to the field data
+- Operations (add/subtract) are clearly explicit
+- Change indicators are automatically calculated from operations
+- Clean, LLM-friendly YAML structure
+
+3. **Relationship Meters**:
 
 - Affection (AP): 0-200
 - Desire (DP): 0-150

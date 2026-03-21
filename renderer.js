@@ -81,7 +81,9 @@ function buildTemplateContext(characterList, worldData, templateConfig) {
         
         // Extract dynamic fields for this character
         const dynamicFields = extractDisplayableFields(stats, worldData);
+        console.log('[SST DEBUG] buildTemplateContext - stats:', stats, 'dynamicFields:', dynamicFields);
         const dynamicStatsHtml = generateDynamicStatsHtml(dynamicFields);
+        console.log('[SST DEBUG] Template context built - dynamicFields included:', dynamicFields?.length || 0, 'fields');
         
         return {
           characterName: name,

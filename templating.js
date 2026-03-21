@@ -35,6 +35,14 @@ Handlebars.registerHelper("or", function (a, b) {
   return a || b;
 });
 
+// Check if string contains substring
+Handlebars.registerHelper("contains", function (str, substr) {
+  if (typeof str !== "string" || typeof substr !== "string") {
+    return false;
+  }
+  return str.includes(substr);
+});
+
 Handlebars.registerHelper("divide", function (a, b) {
   if (typeof a !== "number" || typeof b !== "number" || b === 0) {
     return 0;

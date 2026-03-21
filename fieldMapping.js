@@ -127,6 +127,69 @@ const DEFAULT_FIELD_MAPPING = {
 };
 
 /**
+ * Check if a value is an operation object (has add, subtract, remove, or icon keys)
+ * @param {*} value - The value to check
+ * @returns {boolean} True if the value is an operation object
+ */
+const isOperationObject = (value) => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const operationKeys = ['add', 'subtract', 'remove', 'icon', 'value'];
+  return Object.keys(value).some(key => operationKeys.includes(key));
+};
+
+/**
+ * Extract the actual value from a field (handles operation objects)
+ * @param {*} fieldValue - The field value which may be an operation object
+ * @returns {*} The actual value for display/storage
+ */
+const extractFieldValue = (fieldValue) => {
+  if (isOperationObject(fieldValue)) {
+    // If it has an explicit value, use that
+    if (fieldValue.value !== undefined) {
+      return fieldValue.value;
+    }
+    // Otherwise, this is an operations-only object, return undefined
+    // (the actual value will be computed by storage layer)
+    return undefined;
+  }
+  return fieldValue;
+};
+
+/**
+ * Extract icon from operation object if present
+ * @param {*} fieldValue - The field value which may contain an icon
+ * @returns {string|null} The icon if found, null otherwise
+ */
+const extractIconFromField = (fieldValue) => {
+  if (isOperationObject(fieldValue) && fieldValue.icon) {
+    return fieldValue.icon;
+  }
+  return null;
+};
+
+/**
+ * Calculate change value from operation object
+ * @param {*} fieldValue - The field value which may contain add/subtract
+ * @returns {number} The calculated change (positive for add, negative for subtract)
+ */
+const calculateChangeFromOperations = (fieldValue) => {
+  if (!isOperationObject(fieldValue)) {
+    return 0;
+  }
+  
+  let change = 0;
+  if (typeof fieldValue.add === 'number') {
+    change += fieldValue.add;
+  }
+  if (typeof fieldValue.subtract === 'number') {
+    change -= fieldValue.subtract;
+  }
+  return change;
+};
+
+/**
  * Generate display information for a field based on its key and value
  * @param {string} fieldKey - The field key from the JSON data
  * @param {*} fieldValue - The field value from the JSON data
@@ -135,35 +198,42 @@ const DEFAULT_FIELD_MAPPING = {
  * @returns {Object} Display information with displayName, icon, type, etc.
  */
 const generateFieldMapping = (fieldKey, fieldValue, characterData = {}, worldData = {}) => {
+  // Extract the actual value (handles operation objects)
+  const actualValue = extractFieldValue(fieldValue);
+  
   // Check if we have a predefined mapping
   let mapping = DEFAULT_FIELD_MAPPING[fieldKey] ? 
     { ...DEFAULT_FIELD_MAPPING[fieldKey], key: fieldKey } : null;
   
-  // Check for custom icon in the data - supports multiple naming conventions
-  let customIcon = null;
-  const iconKeys = [
-    `${fieldKey}Icon`,           // apIcon
-    `${fieldKey}_icon`,          // ap_icon
-    `${fieldKey}.icon`,          // ap.icon (if passed as key)
-    `icon_${fieldKey}`,          // icon_ap
-    `icons.${fieldKey}`,         // icons.ap (if passed as key)
-  ];
+  // Check for custom icon in the new unified format (field object with icon property)
+  let customIcon = extractIconFromField(fieldValue);
   
-  // First check character-specific icons object
-  if (characterData.icons && typeof characterData.icons === 'object' && characterData.icons[fieldKey]) {
-    customIcon = characterData.icons[fieldKey];
-  }
-  // Then check worldData icons object for shared icons
-  else if (worldData.icons && typeof worldData.icons === 'object' && worldData.icons[fieldKey]) {
-    customIcon = worldData.icons[fieldKey];
-  }
-  // Finally check character-specific icon keys
-  else {
-    // Check each possible icon key in character data
-    for (const iconKey of iconKeys) {
-      if (characterData[iconKey]) {
-        customIcon = characterData[iconKey];
-        break;
+  // Check for custom icon in the data - supports multiple naming conventions (DEPRECATED but still supported)
+  if (!customIcon) {
+    const iconKeys = [
+      `${fieldKey}Icon`,           // apIcon
+      `${fieldKey}_icon`,          // ap_icon
+      `${fieldKey}.icon`,          // ap.icon (if passed as key)
+      `icon_${fieldKey}`,          // icon_ap
+      `icons.${fieldKey}`,         // icons.ap (if passed as key)
+    ];
+    
+    // First check character-specific icons object (DEPRECATED)
+    if (characterData.icons && typeof characterData.icons === 'object' && characterData.icons[fieldKey]) {
+      customIcon = characterData.icons[fieldKey];
+    }
+    // Then check worldData icons object for shared icons (DEPRECATED)
+    else if (worldData.icons && typeof worldData.icons === 'object' && worldData.icons[fieldKey]) {
+      customIcon = worldData.icons[fieldKey];
+    }
+    // Finally check character-specific icon keys (DEPRECATED)
+    else {
+      // Check each possible icon key in character data
+      for (const iconKey of iconKeys) {
+        if (characterData[iconKey]) {
+          customIcon = characterData[iconKey];
+          break;
+        }
       }
     }
   }
@@ -261,13 +331,13 @@ const generateFieldMapping = (fieldKey, fieldValue, characterData = {}, worldDat
   }
   
   // Type-based detection from value
-  if (typeof fieldValue === 'boolean') {
+  if (typeof actualValue === 'boolean') {
     type = "boolean";
-    icon = fieldValue ? "✅" : "❌";
-  } else if (typeof fieldValue === 'string' && fieldValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    icon = actualValue ? "✅" : "❌";
+  } else if (typeof actualValue === 'string' && actualValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
     type = "date";
     icon = "📅";
-  } else if (typeof fieldValue === 'string' && fieldValue.match(/^#[0-9A-Fa-f]{6}$/)) {
+  } else if (typeof actualValue === 'string' && actualValue.match(/^#[0-9A-Fa-f]{6}$/)) {
     type = "color";
     icon = "🎨";
   }
@@ -277,7 +347,7 @@ const generateFieldMapping = (fieldKey, fieldValue, characterData = {}, worldDat
     displayName,
     icon: customIcon || icon, // Use custom icon if provided, otherwise use default/pattern-based icon
     type,
-    maxValue: typeof fieldValue === 'number' ? Math.max(100, fieldValue * 1.2) : undefined
+    maxValue: typeof actualValue === 'number' ? Math.max(100, actualValue * 1.2) : undefined
   };
 };
 
@@ -288,6 +358,7 @@ const generateFieldMapping = (fieldKey, fieldValue, characterData = {}, worldDat
  * @returns {Array} Array of field mappings for displayable stats
  */
 const extractDisplayableFields = (characterStats, worldData = {}) => {
+  console.log('[SST DEBUG] extractDisplayableFields called with:', { characterStats, keys: Object.keys(characterStats || {}) });
   const fields = [];
   const excludedFields = new Set([
     'name', 'internal_thought', 'thought', 'relationshipStatus', 'desireStatus', 
@@ -299,29 +370,40 @@ const extractDisplayableFields = (characterStats, worldData = {}) => {
   Object.keys(characterStats).forEach(key => {
     const value = characterStats[key];
     
-    // Skip fields that end with "Change" as they are change indicators, not displayable stats
+    // Skip fields that end with "Change" as they are change indicators, not displayable stats (DEPRECATED)
     if (key.endsWith('Change')) {
       return;
     }
     
-    // Skip icon fields - they're metadata, not stats to display
+    // Skip icon fields - they're metadata, not stats to display (DEPRECATED)
     if (key.endsWith('Icon') || key.endsWith('_icon') || key.startsWith('icon_') || key === 'icons') {
       return;
     }
 
-    // Skip "hidden" fields
-    if (key.endsWith("Hidden")) {
+    // Skip old suffix-based operation keys
+    if (key.endsWith('Add') || key.endsWith('Remove')) {
+      return;
+    }
+    
+    // Get the actual value (handles operation objects)
+    const actualValue = extractFieldValue(value);
+    
+    // Skip hidden fields (check unified hidden property)
+    if (isOperationObject(value) && value.hidden === true) {
       return;
     }
     
     // Only include fields that are numeric stats
-    if (!excludedFields.has(key) && (typeof value === 'number' || value === "?")) {
+    if (!excludedFields.has(key) && (typeof actualValue === 'number' || actualValue === "?")) {
       const mapping = generateFieldMapping(key, value, characterStats, worldData);
       if (mapping.type === 'stat') {
+        // Calculate change value from operation object (add/subtract)
+        const changeValue = calculateChangeFromOperations(value);
+        
         fields.push({
           ...mapping,
-          value: value,
-          changeValue: characterStats[key + 'Change'] || 0
+          value: actualValue,
+          changeValue: changeValue
         });
       }
     }
