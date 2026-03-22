@@ -47,12 +47,16 @@ const migrateMetadataStructure = (storage) => {
 const savePreMessageSnapshot = () => {
   const storage = getMetadata();
   
-  storage.preLastMessageSnapshot = {
+  const snapshot = {
     worldData: JSON.parse(JSON.stringify(storage.worldData)),
     cards: JSON.parse(JSON.stringify(storage.cards))
   };
   
+  storage.preLastMessageSnapshot = snapshot;
+  
   saveMetadata();
+  
+  console.log(`[SST] Saved pre-message snapshot. Cards: ${Object.keys(snapshot.cards).length}, WorldData keys: ${Object.keys(snapshot.worldData).length}`);
 };
 
 // Restore metadata from pre-message snapshot (used when switching swipes)
@@ -118,6 +122,9 @@ const getMetadata = () => {
   if (!meta.sim_tracker) {
     return initMetadata();
   }
+  
+  // Always run migration to ensure structure is up to date
+  migrateMetadataStructure(meta.sim_tracker);
   
   return meta.sim_tracker;
 };

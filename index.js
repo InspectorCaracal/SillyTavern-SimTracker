@@ -965,7 +965,7 @@ cards:
       setGenerationInProgress(true);
     });
 
-    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (mesId) => {
+    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, async (mesId) => {
       // Clear generation in progress flag when message is rendered
       if (getGenerationType() == 'swipe') {
         clearGenerationType();
@@ -975,11 +975,85 @@ cards:
       const message = context.chat[mesId];
       const tracking = getTrackingIds();
       
+      log(`CHARACTER_MESSAGE_RENDERED: START mesId=${mesId}`);
+      log(`  tracking.mesId=${tracking.mesId}, tracking.swipeId=${tracking.swipeId}`);
+      log(`  message exists: ${!!message}, message.swipe_id=${message?.swipe_id}`);
+      log(`  chat length: ${context.chat?.length}`);
+      log(`  is last message: ${mesId === (context.chat?.length - 1)}`);
+      
+      // Check if this is a swipe switch on the last message (same mesId, different swipeId)
+      if (message && mesId === tracking.mesId && message.swipe_id !== undefined && message.swipe_id !== tracking.swipeId) {
+        log(`CHARACTER_MESSAGE_RENDERED: Detected swipe switch on message ${mesId} from swipe ${tracking.swipeId} to ${message.swipe_id}`);
+        
+        // Restore from snapshot first
+        const restored = restoreFromSnapshot();
+        if (restored) {
+          log(`CHARACTER_MESSAGE_RENDERED: Restored snapshot, now reprocessing message ${mesId} with swipe ${message.swipe_id}`);
+          
+          // Re-process the current message's sim data with the updated content
+          const identifier = get_settings("codeBlockIdentifier");
+          const jsonRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
+          const matches = message.mes.match(jsonRegex);
+          
+          if (matches && matches.length > 0) {
+            log(`CHARACTER_MESSAGE_RENDERED: Found ${matches.length} sim block(s) to reprocess`);
+            
+            // Import parseTrackerData dynamically
+            const { parseTrackerData } = await import("./formatUtils.js");
+            const { processSimData } = await import("./storage.js");
+            
+            for (const block of matches) {
+              try {
+                const content = block
+                  .replace(/```/g, "")
+                  .replace(new RegExp(`^${identifier}\\s*`), "")
+                  .trim();
+                
+                if (!content) continue;
+                
+                const userFormat = get_settings("trackerFormat") || "auto";
+                const jsonData = userFormat === "auto" ? parseTrackerData(content) : parseTrackerData(content, userFormat);
+                
+                if (jsonData && typeof jsonData === "object") {
+                  processSimData(jsonData);
+                  log(`CHARACTER_MESSAGE_RENDERED: Processed sim data block`);
+                }
+              } catch (parseError) {
+                log(`CHARACTER_MESSAGE_RENDERED: Error parsing sim data: ${parseError.message}`);
+              }
+            }
+          } else {
+            log(`CHARACTER_MESSAGE_RENDERED: No sim data found in swipe ${message.swipe_id}`);
+          }
+          
+          // Update lastSimJsonString for macro
+          const updatedStats = updateLastSimStatsOnRegenerateOrSwipe(mesId, get_settings);
+          if (updatedStats) {
+            lastSimJsonString = updatedStats;
+          }
+        } else {
+          log(`CHARACTER_MESSAGE_RENDERED: No snapshot available for swipe switch`);
+        }
+        
+        // Update tracking to the new swipe
+        updateTrackingIds(mesId, message.swipe_id);
+        
+        // Render without processing (we already processed above)
+        setGenerationInProgress(false);
+        renderTrackerWithoutSim(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString);
+        return;
+      }
+      
       // Check if this is a new message (not just a re-render)
-      if (message && mesId > tracking.mesId) {
-        log(`New message ${mesId} detected. Saving pre-message snapshot.`);
-        // Save snapshot of current state before processing new message
+      const isNewMessage = message && mesId > tracking.mesId;
+      log(`  isNewMessage check: mesId(${mesId}) > tracking.mesId(${tracking.mesId}) = ${isNewMessage}`);
+      
+      if (isNewMessage) {
+        log(`  -> New message detected! Saving pre-message snapshot BEFORE processing.`);
         savePreMessageSnapshot();
+        log(`  -> Pre-message snapshot saved.`);
+      } else {
+        log(`  -> Not a new message (re-render or existing). No snapshot needed.`);
       }
       
       let withSim = getGenerationInProgress();
@@ -988,8 +1062,11 @@ cards:
       
       // Update tracking after successful render
       if (message && message.swipe_id !== undefined) {
+        log(`  -> Updating tracking: mesId=${mesId}, swipeId=${message.swipe_id}`);
         updateTrackingIds(mesId, message.swipe_id);
       }
+      
+      log(`CHARACTER_MESSAGE_RENDERED: END mesId=${mesId}`);
     });
     
     eventSource.on(event_types.CHAT_CHANGED, () => {
@@ -1046,9 +1123,10 @@ cards:
       }
     });
     
-    // Handle message swipe events (both generation and switching between existing swipes)
-    // MESSAGE_SWIPED fires when swipe changes, regardless of whether it's generation or switching
-    eventSource.on(event_types.MESSAGE_SWIPED, async (mesId) => {
+    // Handle message swipe events
+    // MESSAGE_SWIPED fires when swipe changes, but message content may not be updated yet
+    // The actual restore+reprocess happens in CHARACTER_MESSAGE_RENDERED when content is ready
+    eventSource.on(event_types.MESSAGE_SWIPED, (mesId) => {
       const context = getContext();
       const message = context.chat[mesId];
       
@@ -1062,7 +1140,7 @@ cards:
       
       log(`MESSAGE_SWIPED: Message ${mesId}, swipe ${currentSwipeId} (tracking: mes=${tracking.mesId}, swipe=${tracking.swipeId})`);
       
-      // Only handle swipe switching on the last message
+      // Only handle swipe on the last message
       if (mesId !== context.chat.length - 1) {
         log(`MESSAGE_SWIPED: Not the last message, ignoring`);
         return;
@@ -1072,71 +1150,16 @@ cards:
       const isNewGeneration = currentSwipeId >= (message.swipes?.length || 0);
       
       if (isNewGeneration) {
-        log(`MESSAGE_SWIPED: New generation detected (swipe ${currentSwipeId}), waiting for CHARACTER_MESSAGE_RENDERED`);
-        // New generation - let CHARACTER_MESSAGE_RENDERED handle it
+        log(`MESSAGE_SWIPED: New generation detected (swipe ${currentSwipeId}), CHARACTER_MESSAGE_RENDERED will handle it`);
+        // New generation - CHARACTER_MESSAGE_RENDERED will handle snapshot and processing
         return;
       }
       
       // This is switching to an existing swipe
+      // CHARACTER_MESSAGE_RENDERED will detect this and do the restore+reprocess
+      // when the message content is guaranteed to be updated
       if (currentSwipeId !== tracking.swipeId) {
-        log(`MESSAGE_SWIPED: Switching to existing swipe ${currentSwipeId} from ${tracking.swipeId}`);
-        
-        // Restore from snapshot
-        const restored = restoreFromSnapshot();
-        if (!restored) {
-          // No snapshot available - might be an old chat or error
-          log(`MESSAGE_SWIPED: No snapshot available, cannot restore state for swipe switch`);
-          return;
-        }
-        
-        // Re-process only the current message's sim data
-        const identifier = get_settings("codeBlockIdentifier");
-        const jsonRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
-        const matches = message.mes.match(jsonRegex);
-        
-        if (matches && matches.length > 0) {
-          log(`MESSAGE_SWIPED: Reprocessing ${matches.length} sim block(s) for swipe ${currentSwipeId}`);
-          
-          // Import parseTrackerData dynamically
-          const { parseTrackerData } = await import("./formatUtils.js");
-          const { processSimData } = await import("./storage.js");
-          
-          for (const block of matches) {
-            try {
-              const content = block
-                .replace(/```/g, "")
-                .replace(new RegExp(`^${identifier}\\s*`), "")
-                .trim();
-              
-              if (!content) continue;
-              
-              const userFormat = get_settings("trackerFormat") || "auto";
-              const jsonData = userFormat === "auto" ? parseTrackerData(content) : parseTrackerData(content, userFormat);
-              
-              if (jsonData && typeof jsonData === "object") {
-                processSimData(jsonData);
-              }
-            } catch (parseError) {
-              log(`MESSAGE_SWIPED: Error parsing sim data: ${parseError.message}`);
-            }
-          }
-        } else {
-          log(`MESSAGE_SWIPED: No sim data found in swipe ${currentSwipeId}`);
-        }
-        
-        // Update tracking
-        updateTrackingIds(mesId, currentSwipeId);
-        
-        // Update lastSimJsonString for macro
-        const updatedStats = updateLastSimStatsOnRegenerateOrSwipe(mesId, get_settings);
-        if (updatedStats) {
-          lastSimJsonString = updatedStats;
-        }
-        
-        // Refresh the UI
-        renderTrackerWithoutSim(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString);
-        
-        log(`MESSAGE_SWIPED: Successfully switched to swipe ${currentSwipeId}`);
+        log(`MESSAGE_SWIPED: Switch to existing swipe ${currentSwipeId} detected, deferring to CHARACTER_MESSAGE_RENDERED`);
       }
     });
 
