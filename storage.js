@@ -10,15 +10,104 @@ const initMetadata = () => {
   
   if (!meta.sim_tracker) {
     meta.sim_tracker = {
-      version: 1,
+      version: 3,
       worldData: {},
       cards: {},
-      lastUpdated: Date.now()
+      lastUpdated: Date.now(),
+      // Snapshot for swipe support
+      preLastMessageSnapshot: null,
+      lastProcessedMesId: -1,
+      lastProcessedSwipeId: -1
     };
     context.saveMetadata();
   }
   
+  // Migrate old metadata to new structure if needed
+  migrateMetadataStructure(meta.sim_tracker);
+  
   return meta.sim_tracker;
+};
+
+// Migrate old metadata structures to current version
+const migrateMetadataStructure = (storage) => {
+  if (!storage.version || storage.version < 3) {
+    // Add snapshot fields for version 3
+    storage.preLastMessageSnapshot = null;
+    storage.lastProcessedMesId = -1;
+    storage.lastProcessedSwipeId = -1;
+    storage.version = 3;
+    
+    const context = getContext();
+    context.saveMetadata();
+    console.log(`[SST] Migrated metadata to version 3 (added swipe snapshot support)`);
+  }
+};
+
+// Save snapshot of current metadata state before processing a new message
+const savePreMessageSnapshot = () => {
+  const storage = getMetadata();
+  
+  storage.preLastMessageSnapshot = {
+    worldData: JSON.parse(JSON.stringify(storage.worldData)),
+    cards: JSON.parse(JSON.stringify(storage.cards))
+  };
+  
+  saveMetadata();
+};
+
+// Restore metadata from pre-message snapshot (used when switching swipes)
+const restoreFromSnapshot = () => {
+  const storage = getMetadata();
+  
+  if (!storage.preLastMessageSnapshot) {
+    console.log(`[SST] No snapshot available to restore from`);
+    return false;
+  }
+  
+  storage.worldData = JSON.parse(JSON.stringify(storage.preLastMessageSnapshot.worldData));
+  storage.cards = JSON.parse(JSON.stringify(storage.preLastMessageSnapshot.cards));
+  
+  saveMetadata();
+  console.log(`[SST] Restored metadata from pre-last-message snapshot`);
+  return true;
+};
+
+// Clear snapshot and tracking IDs (used by /sst-init-metadata)
+const clearSnapshot = () => {
+  const storage = getMetadata();
+  
+  storage.preLastMessageSnapshot = null;
+  storage.lastProcessedMesId = -1;
+  storage.lastProcessedSwipeId = -1;
+  
+  saveMetadata();
+  console.log(`[SST] Cleared swipe snapshot and tracking data`);
+};
+
+// Update tracking IDs for the last processed message
+const updateTrackingIds = (mesId, swipeId) => {
+  const storage = getMetadata();
+  
+  storage.lastProcessedMesId = mesId;
+  storage.lastProcessedSwipeId = swipeId;
+  
+  saveMetadata();
+};
+
+// Get tracking IDs
+const getTrackingIds = () => {
+  const storage = getMetadata();
+  
+  return {
+    mesId: storage.lastProcessedMesId,
+    swipeId: storage.lastProcessedSwipeId
+  };
+};
+
+// Check if snapshot exists
+const hasSnapshot = () => {
+  const storage = getMetadata();
+  return !!storage.preLastMessageSnapshot;
 };
 
 // Get the metadata storage object
@@ -294,5 +383,11 @@ export {
   getCardNames,
   processSimData,
   migrateChatToMetadata,
-  isMetadataInitialized
+  isMetadataInitialized,
+  savePreMessageSnapshot,
+  restoreFromSnapshot,
+  clearSnapshot,
+  updateTrackingIds,
+  getTrackingIds,
+  hasSnapshot
 };

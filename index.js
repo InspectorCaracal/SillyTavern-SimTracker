@@ -78,7 +78,13 @@ import {
   getCardNames,
   getWorldData,
   migrateChatToMetadata,
-  isMetadataInitialized
+  isMetadataInitialized,
+  savePreMessageSnapshot,
+  restoreFromSnapshot,
+  clearSnapshot,
+  updateTrackingIds,
+  getTrackingIds,
+  hasSnapshot
 } from "./storage.js";
 
 const MODULE_NAME = "silly-sim-tracker";
@@ -712,7 +718,7 @@ cards:
           // Use provided identifier, or fall back to settings, or default to "sim"
           const identifier = value || get_settings("codeBlockIdentifier") || "sim";
 
-          if (confirm(`This will RESET the metadata storage and rescan all messages for code blocks with identifier "${identifier}". Any existing accumulated card data will be wiped and rebuilt from chat history. Continue?`)) {
+          if (confirm(`This will RESET the metadata storage and rescan all messages for code blocks with identifier "${identifier}". Any existing accumulated card data and swipe snapshots will be wiped and rebuilt from chat history. Continue?`)) {
             try {
               // Always clear the metadata first
               const storage = getMetadata();
@@ -721,8 +727,12 @@ cards:
               saveMetadata();
               log("Metadata storage reset.");
               
+              // Clear the swipe snapshot as well
+              clearSnapshot();
+              log("Swipe snapshot cleared.");
+              
               const count = await migrateChatToMetadata(identifier);
-              return `Migration complete! Processed ${count} sim data blocks with identifier "${identifier}". Metadata storage has been reset and populated.`;
+              return `Migration complete! Processed ${count} sim data blocks with identifier "${identifier}". Metadata and swipe snapshots have been reset and populated.`;
             } catch (error) {
               log(`Error in /sst-init-metadata: ${error.message}`);
               return `Error during migration: ${error.message}`;
@@ -959,11 +969,27 @@ cards:
       // Clear generation in progress flag when message is rendered
       if (getGenerationType() == 'swipe') {
         clearGenerationType();
-        return;
       }
+      
+      const context = getContext();
+      const message = context.chat[mesId];
+      const tracking = getTrackingIds();
+      
+      // Check if this is a new message (not just a re-render)
+      if (message && mesId > tracking.mesId) {
+        log(`New message ${mesId} detected. Saving pre-message snapshot.`);
+        // Save snapshot of current state before processing new message
+        savePreMessageSnapshot();
+      }
+      
       let withSim = getGenerationInProgress();
       setGenerationInProgress(false);
       renderTracker(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString, withSim);
+      
+      // Update tracking after successful render
+      if (message && message.swipe_id !== undefined) {
+        updateTrackingIds(mesId, message.swipe_id);
+      }
     });
     
     eventSource.on(event_types.CHAT_CHANGED, () => {
@@ -977,20 +1003,142 @@ cards:
     eventSource.on(event_types.MESSAGE_EDITED, (mesId) => {
       log(`Message ${mesId} was edited. Re-rendering tracker card.`);
       renderTrackerWithoutSim(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString);
+      
+      // Show warning about potential desync
+      const tracking = getTrackingIds();
+      if (mesId <= tracking.mesId) {
+        console.warn(`[SST] Message ${mesId} was edited. Sim data may be out of sync. Run /sst-init-metadata to resync if needed.`);
+        // Use SillyTavern's toast notification if available
+        if (typeof toastr !== 'undefined') {
+          toastr.warning('Message was edited. Sim data may be out of sync. Run /sst-init-metadata to resync if needed.', 'Silly Sim Tracker');
+        }
+      }
     });
     
-    // MESSAGE_SWIPE is not available in all ST versions
-    if (event_types.MESSAGE_SWIPE) {
-      eventSource.on(event_types.MESSAGE_SWIPE, (mesId) => {
-        log(
-          `Message swipe detected for message ID ${mesId}. Updating last_sim_stats macro.`
-        );
+    // Handle message deletion
+    if (event_types.MESSAGE_DELETED) {
+      eventSource.on(event_types.MESSAGE_DELETED, (mesId) => {
+        log(`Message ${mesId} was deleted.`);
+        
+        const tracking = getTrackingIds();
+        if (mesId <= tracking.mesId) {
+          console.warn(`[SST] Message ${mesId} was deleted. Sim data may be out of sync. Run /sst-init-metadata to resync if needed.`);
+          if (typeof toastr !== 'undefined') {
+            toastr.warning('Message was deleted. Sim data may be out of sync. Run /sst-init-metadata to resync if needed.', 'Silly Sim Tracker');
+          }
+        }
+      });
+    }
+    
+    // Handle message update (includes deletion in some ST versions)
+    eventSource.on(event_types.MESSAGE_UPDATED, (mesId) => {
+      // Refresh cards as before
+      wrappedRefreshAllCards();
+      
+      // Additional check for potential desync
+      const context = getContext();
+      const message = context.chat[mesId];
+      const tracking = getTrackingIds();
+      
+      // If message was updated to have different content than before, warn about potential desync
+      if (message && mesId <= tracking.mesId) {
+        log(`Message ${mesId} was updated. Checking for potential desync.`);
+      }
+    });
+    
+    // Handle message swipe events (both generation and switching between existing swipes)
+    // MESSAGE_SWIPED fires when swipe changes, regardless of whether it's generation or switching
+    eventSource.on(event_types.MESSAGE_SWIPED, async (mesId) => {
+      const context = getContext();
+      const message = context.chat[mesId];
+      
+      if (!message) {
+        log(`MESSAGE_SWIPED: Message ${mesId} not found`);
+        return;
+      }
+      
+      const tracking = getTrackingIds();
+      const currentSwipeId = message.swipe_id;
+      
+      log(`MESSAGE_SWIPED: Message ${mesId}, swipe ${currentSwipeId} (tracking: mes=${tracking.mesId}, swipe=${tracking.swipeId})`);
+      
+      // Only handle swipe switching on the last message
+      if (mesId !== context.chat.length - 1) {
+        log(`MESSAGE_SWIPED: Not the last message, ignoring`);
+        return;
+      }
+      
+      // Check if this is a new generation (swipe_id >= number of swipes)
+      const isNewGeneration = currentSwipeId >= (message.swipes?.length || 0);
+      
+      if (isNewGeneration) {
+        log(`MESSAGE_SWIPED: New generation detected (swipe ${currentSwipeId}), waiting for CHARACTER_MESSAGE_RENDERED`);
+        // New generation - let CHARACTER_MESSAGE_RENDERED handle it
+        return;
+      }
+      
+      // This is switching to an existing swipe
+      if (currentSwipeId !== tracking.swipeId) {
+        log(`MESSAGE_SWIPED: Switching to existing swipe ${currentSwipeId} from ${tracking.swipeId}`);
+        
+        // Restore from snapshot
+        const restored = restoreFromSnapshot();
+        if (!restored) {
+          // No snapshot available - might be an old chat or error
+          log(`MESSAGE_SWIPED: No snapshot available, cannot restore state for swipe switch`);
+          return;
+        }
+        
+        // Re-process only the current message's sim data
+        const identifier = get_settings("codeBlockIdentifier");
+        const jsonRegex = new RegExp("```" + identifier + "[\\s\\S]*?```", "gm");
+        const matches = message.mes.match(jsonRegex);
+        
+        if (matches && matches.length > 0) {
+          log(`MESSAGE_SWIPED: Reprocessing ${matches.length} sim block(s) for swipe ${currentSwipeId}`);
+          
+          // Import parseTrackerData dynamically
+          const { parseTrackerData } = await import("./formatUtils.js");
+          const { processSimData } = await import("./storage.js");
+          
+          for (const block of matches) {
+            try {
+              const content = block
+                .replace(/```/g, "")
+                .replace(new RegExp(`^${identifier}\\s*`), "")
+                .trim();
+              
+              if (!content) continue;
+              
+              const userFormat = get_settings("trackerFormat") || "auto";
+              const jsonData = userFormat === "auto" ? parseTrackerData(content) : parseTrackerData(content, userFormat);
+              
+              if (jsonData && typeof jsonData === "object") {
+                processSimData(jsonData);
+              }
+            } catch (parseError) {
+              log(`MESSAGE_SWIPED: Error parsing sim data: ${parseError.message}`);
+            }
+          }
+        } else {
+          log(`MESSAGE_SWIPED: No sim data found in swipe ${currentSwipeId}`);
+        }
+        
+        // Update tracking
+        updateTrackingIds(mesId, currentSwipeId);
+        
+        // Update lastSimJsonString for macro
         const updatedStats = updateLastSimStatsOnRegenerateOrSwipe(mesId, get_settings);
         if (updatedStats) {
           lastSimJsonString = updatedStats;
         }
-      });
-    }
+        
+        // Refresh the UI
+        renderTrackerWithoutSim(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString);
+        
+        log(`MESSAGE_SWIPED: Successfully switched to swipe ${currentSwipeId}`);
+      }
+    });
 
     // Listen for generation ended event to update sidebars
     eventSource.on(event_types.GENERATION_ENDED, () => {
