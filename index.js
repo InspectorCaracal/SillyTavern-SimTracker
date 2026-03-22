@@ -502,17 +502,31 @@ ${exampleJson}
         
         // If no field specified, return all card data as formatted text
         log(`Processed {{sim_current::${cardName}}} = all data`);
-        
+
+        // Helper function to format values recursively
+        const formatValue = (value) => {
+          if (Array.isArray(value)) {
+            return value.join(', ');
+          }
+          if (typeof value === 'object' && value !== null) {
+            return Object.entries(value)
+              .map(([k, v]) => {
+                if (Array.isArray(v)) {
+                  return `${k}: ${v.join(', ')}`;
+                }
+                return `${k}: ${v}`;
+              })
+              .join(', ');
+          }
+          return String(value);
+        };
+
         // Format all data as a readable list
         const dataEntries = Object.entries(cardData)
-          .filter(([key]) => key !== 'name') // Skip the name field since it's the header
           .map(([key, value]) => {
-            if (Array.isArray(value)) {
-              return `${key}: ${value.join(', ')}`;
-            }
-            return `${key}: ${value}`;
+            return `${key}: ${formatValue(value)}`;
           });
-        
+
         return dataEntries.join('\n');
       },
     });
