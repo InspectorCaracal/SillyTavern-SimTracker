@@ -1064,17 +1064,6 @@ const renderTracker = (mesId, get_settings, getReactionEmoji, darkenColor, lastS
     const positions = availableTemplatePositions || [currentTemplatePosition];
     console.error(`[SST] [${MODULE_NAME}] ║  Active Positions: ${positions.join(', ')}`);
     
-    // Check if it's a Handlebars template error
-    if (error.message.includes('Handlebars') || error.message.includes('template') || error.message.includes('{{')) {
-      console.error(`[SST] [${MODULE_NAME}] ╠══════════════════════════════════════════════════════════╣`);
-      console.error(`[SST] [${MODULE_NAME}] ║  This appears to be a template syntax error!`);
-      console.error(`[SST] [${MODULE_NAME}] ║  Check your template for:`);
-      console.error(`[SST] [${MODULE_NAME}] ║  • Unclosed {{#if}} or {{#each}} blocks`);
-      console.error(`[SST] [${MODULE_NAME}] ║  • Missing closing }} brackets`);
-      console.error(`[SST] [${MODULE_NAME}] ║  • Invalid Handlebars syntax`);
-      console.error(`[SST] [${MODULE_NAME}] ║  • Mismatched HTML tags`);
-    }
-    
     console.error(`[SST] [${MODULE_NAME}] ╠══════════════════════════════════════════════════════════╣`);
     console.error(`[SST] [${MODULE_NAME}] ║  Stack Trace:`);
     const stackLines = error.stack.split('\n').slice(0, 5);
@@ -1246,7 +1235,7 @@ const refreshSidebarsOnly = (get_settings) => {
     usePatternDetectionFallback: get_settings("usePatternDetectionFallback") !== false
   };
   
-  // Build template context
+  // Build template context - match the structure from buildTemplateContext for tabbed templates
   const allCardsTemplateData = buildTemplateContext(allCardsList, worldData, templateConfig);
   const templateData = {
     cards: Array.isArray(allCardsTemplateData) ? allCardsTemplateData : allCardsTemplateData.cards,
@@ -1254,7 +1243,10 @@ const refreshSidebarsOnly = (get_settings) => {
     worldName: worldData.name || "",
     currentDate: currentDate.toISOString().split("T")[0],
     currentTime: currentTime,
-    defaultBgColor: defaultBgColor
+    bgColor: defaultBgColor,
+    darkerBgColor: templateConfig.darkenColor(defaultBgColor),
+    defaultBgColor: defaultBgColor,
+    worldData: worldData
   };
   
   // Update left sidebar
