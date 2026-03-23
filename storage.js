@@ -218,6 +218,14 @@ const updateCardData = (cardName, stats) => {
         }
       }
       
+      // Store icon metadata if present
+      if (value.icon !== undefined) {
+        if (!cardData._icons) {
+          cardData._icons = {};
+        }
+        cardData._icons[key] = value.icon;
+      }
+      
       // Handle numeric operations (add/subtract)
       if (typeof cardData[key] === 'number') {
         if (typeof value.add === 'number') {

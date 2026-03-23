@@ -138,7 +138,12 @@ const generateFieldMapping = (fieldKey, fieldValue, characterData = {}, worldDat
   
   // Check for custom icon in the new unified format (field object with icon property)
   let customIcon = extractIconFromField(fieldValue);
-  
+
+  // Check for stored icon metadata from previous operation objects
+  if (!customIcon && characterData._icons && characterData._icons[fieldKey]) {
+    customIcon = characterData._icons[fieldKey];
+  }
+
   // Check for custom icon in the data - supports multiple naming conventions (DEPRECATED but still supported)
   if (!customIcon) {
     const iconKeys = [
@@ -310,6 +315,10 @@ const extractDisplayableFields = (characterStats, worldData = {}, fieldMappings 
   
   // Process all numeric and change fields for the stats display
   Object.keys(characterStats).forEach(key => {
+    // Skip private fields (those starting with underscore)
+    if (key.startsWith('_')) {
+      return;
+    }
     const value = characterStats[key];
     
     // Skip fields that end with "Change" as they are change indicators, not displayable stats (DEPRECATED)
