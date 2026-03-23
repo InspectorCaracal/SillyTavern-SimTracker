@@ -969,6 +969,43 @@ cards:
       })
     );
 
+    // Register slash command for refreshing sidebars
+    SlashCommandParser.addCommandObject(
+      SlashCommand.fromProps({
+        name: "sst-refresh-sidebars",
+        callback: () => {
+          if (!get_settings("isEnabled")) {
+            return "Silly Sim Tracker is not enabled.";
+          }
+
+          try {
+            wrappedRefreshSidebarsOnly();
+            return "Sidebars refreshed successfully.";
+          } catch (error) {
+            log(`Error in /sst-refresh-sidebars: ${error.message}`);
+            return `Error refreshing sidebars: ${error.message}`;
+          }
+        },
+        returns: "status message",
+        unnamedArgumentList: [],
+        helpString: `
+                <div>
+                    Refreshes the sidebar tracker cards without re-rendering message cards.
+                    Useful for manually updating the sidebars after editing metadata.
+                </div>
+                <div>
+                    <strong>Example:</strong>
+                    <ul>
+                        <li>
+                            <pre><code class="language-stscript">/sst-refresh-sidebars</code></pre>
+                            Refreshes the sidebar tracker cards
+                        </li>
+                    </ul>
+                </div>
+            `,
+      })
+    );
+
     const context = getContext();
     const { eventSource, event_types } = context;
 

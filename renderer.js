@@ -1241,7 +1241,7 @@ const refreshSidebarsOnly = (get_settings) => {
     cards: Array.isArray(allCardsTemplateData) ? allCardsTemplateData : allCardsTemplateData.cards,
     allCards: Array.isArray(allCardsTemplateData) ? allCardsTemplateData : allCardsTemplateData.cards,
     worldName: worldData.name || "",
-    currentDate: currentDate.toISOString().split("T")[0],
+    currentDate: currentDate,
     currentTime: currentTime,
     bgColor: defaultBgColor,
     darkerBgColor: templateConfig.darkenColor(defaultBgColor),
