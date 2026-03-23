@@ -7,6 +7,26 @@ const MODULE_NAME = "silly-sim-tracker";
 let currentTemplatePosition = "BOTTOM";
 let compiledCardTemplates = {};  // Map of position -> compiled template
 let availableTemplatePositions = ["BOTTOM"];  // Array of available positions
+let currentTemplateStyles = "";  // Extracted template styles from TEMPLATE_STYLE markers
+
+// Extract template styles from TEMPLATE_STYLE markers
+const extractTemplateStyles = (templateHtml) => {
+  if (!templateHtml) return "";
+  
+  const styleStartMarker = "<!-- TEMPLATE_STYLE_START -->";
+  const styleEndMarker = "<!-- TEMPLATE_STYLE_END -->";
+  
+  const styleStartIndex = templateHtml.indexOf(styleStartMarker);
+  const styleEndIndex = templateHtml.indexOf(styleEndMarker);
+  
+  if (styleStartIndex !== -1 && styleEndIndex !== -1 && styleEndIndex > styleStartIndex) {
+    const stylesContent = templateHtml.substring(styleStartIndex + styleStartMarker.length, styleEndIndex).trim();
+    DEBUG && console.log(`[SST] [${MODULE_NAME}] Extracted template styles: ${stylesContent.length} characters`);
+    return stylesContent;
+  }
+  
+  return "";
+};
 
 // New function to extract multiple template sections based on POSITION comments
 // Supports two formats:
@@ -14,6 +34,9 @@ let availableTemplatePositions = ["BOTTOM"];  // Array of available positions
 // 2. Multi-section: Each POSITION has its own START/END markers
 const extractTemplateSections = (templateHtml) => {
   if (!templateHtml) return { "BOTTOM": templateHtml };
+  
+  // First, extract template styles if present
+  currentTemplateStyles = extractTemplateStyles(templateHtml);
   
   const sections = {};
   const positionRegex = /<!--\s*POSITION\s*:\s*(.*?)\s*-->/gi;
@@ -536,6 +559,7 @@ export {
   availableTemplatePositions,
   getWrapperTemplate,
   extractTemplateSections,
+  extractTemplateStyles,
   compileTemplateSections,
   get_extension_directory,
   populateTemplateDropdown,
@@ -543,5 +567,6 @@ export {
   loadTemplate,
   extractTemplatePosition,
   currentTemplatePosition,
+  currentTemplateStyles,
   unescapeHtml
 };

@@ -7,7 +7,8 @@ import {
   compiledCardTemplates, 
   compiledWrapperTemplates,
   availableTemplatePositions,
-  getWrapperTemplate 
+  getWrapperTemplate,
+  currentTemplateStyles
 } from "./templating.js";
 import { parseTrackerData } from "./formatUtils.js";
 import { extractDisplayableFields, generateDynamicStatsHtml } from "./fieldMapping.js";
@@ -54,6 +55,26 @@ const getGenerationType = () => {
 const clearGenerationType = () => {
   generationType = null;
 }
+
+// Helper function to inject template styles into document head
+const injectTemplateStyles = () => {
+  const styleId = "silly-sim-tracker-template-styles";
+  let styleElement = document.getElementById(styleId);
+  
+  // Remove existing style element if present
+  if (styleElement) {
+    styleElement.remove();
+  }
+  
+  // Only inject if there are template styles
+  if (currentTemplateStyles && currentTemplateStyles.trim()) {
+    styleElement = document.createElement("style");
+    styleElement.id = styleId;
+    styleElement.textContent = currentTemplateStyles;
+    document.head.appendChild(styleElement);
+    DEBUG && console.log(`[SST] [${MODULE_NAME}] Injected template styles (${currentTemplateStyles.length} chars)`);
+  }
+};
 
 // Character data is now persisted to chat metadata via storage.js
 // See processSimData() for the merge logic that handles:
@@ -524,6 +545,10 @@ function attachTabEventListeners(sidebarElement) {
 const renderTracker = (mesId, get_settings, getReactionEmoji, darkenColor, lastSimJsonString, withSim = true) => {
   try {
     if (!get_settings("isEnabled")) return;
+    
+    // Inject template styles (idempotent - will only create/update if styles exist)
+    injectTemplateStyles();
+    
     const context = getContext();
     const message = context.chat[mesId];
     if (!message) {
@@ -1114,6 +1139,7 @@ export {
   renderTracker,
   renderTrackerWithoutSim,
   refreshAllCards,
+  injectTemplateStyles,
   messageDataCache,
   mesTextsWithPreparingText,
   isGenerationInProgress,
