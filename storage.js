@@ -200,7 +200,7 @@ const updateCardData = (cardName, stats) => {
     }
     
     // Skip display/system keys
-    if (['bg', 'bgColor', 'color', 'internal_thought', 'thought', 'last_react'].includes(key)) {
+    if (['bg', 'bgColor', 'internal_thought', 'thought', 'last_react'].includes(key)) {
       return;
     }
     
