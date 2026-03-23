@@ -1202,11 +1202,11 @@ const refreshSidebarsOnly = (get_settings) => {
   console.log(`[SST DEBUG] Refreshing sidebars with ${allCardsList.length} cards`);
   
   // Get current world data
-  const currentDate = new Date();
-  const currentTime = currentDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const context = getContext();
   const chatMetadata = context.chatMetadata || context.chat_metadata || {};
   const worldData = chatMetadata.sim_tracker?.worldData || {};
+  const currentDate = worldData.current_date || "Unknown Date";
+  const currentTime = worldData.current_time || "Unknown Time";
   const defaultBgColor = worldData.bg || worldData.bgColor || worldData.color || get_settings("defaultBgColor");
   const isTabbedTemplate = get_settings("templateFile")?.includes("tabs") ||
                            get_settings("templateFile")?.includes("inline") ||
