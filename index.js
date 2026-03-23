@@ -1084,6 +1084,12 @@ cards:
     eventSource.on(event_types.CHAT_CHANGED, () => {
       // Clear cache on chat change to force fresh render
       if (messageDataCache) messageDataCache.clear();
+      // Remove sidebars from previous chat
+      removeGlobalSidebars();
+      // Reset generation flag to ensure sidebar gets recreated
+      setGenerationInProgress(false);
+      // Re-initialize metadata for the new chat
+      initMetadata();
       wrappedRefreshAllCards();
     });
     eventSource.on(event_types.MORE_MESSAGES_LOADED, wrappedRefreshAllCards);

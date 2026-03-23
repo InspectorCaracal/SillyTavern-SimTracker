@@ -12,7 +12,7 @@ import {
 import { parseTrackerData } from "./formatUtils.js";
 import { extractDisplayableFields, generateDynamicStatsHtml } from "./fieldMapping.js";
 import { DEBUG } from "./utils.js";
-import { processSimData } from "./storage.js";
+import { processSimData, getAllCards } from "./storage.js";
 
 const MODULE_NAME = "silly-sim-tracker";
 const CONTAINER_ID = "silly-sim-tracker-container";
@@ -189,9 +189,12 @@ function buildTemplateContext(characterList, worldData, templateConfig) {
 function updateLeftSidebar(content) {
   // If generation is in progress, store the content for later
   if (isGenerationInProgress) {
+    console.log(`[SST DEBUG] updateLeftSidebar: Generation in progress, storing content for later`);
     pendingLeftSidebarContent = content;
     return;
   }
+
+  console.log(`[SST DEBUG] updateLeftSidebar: globalLeftSidebar exists? ${!!globalLeftSidebar}, content length: ${content?.length || 0}`);
 
   // If we don't have a global sidebar yet, create it
   if (!globalLeftSidebar) {
@@ -797,11 +800,28 @@ const renderTracker = (mesId, get_settings, getReactionEmoji, darkenColor, lastS
 
         // Generate cards HTML for this position
         let positionCardsHtml = "";
+        
+        // Get all cards from chat metadata for allCards attribute
+        const allCardsFromStorage = getAllCards();
+        const allCardsList = Object.values(allCardsFromStorage);
+        console.log(`[SST DEBUG] allCards count: ${allCardsList.length}`);
+        
         if (isTabbedTemplate) {
           const templateData = buildTemplateContext(characterList, worldData, templateConfig);
+          // Add allCards to template data
+          const allCardsTemplateData = buildTemplateContext(allCardsList, worldData, templateConfig);
+          templateData.allCards = allCardsTemplateData.cards;
           positionCardsHtml = positionCardTemplate(templateData);
         } else {
           const cardDataArray = buildTemplateContext(characterList, worldData, templateConfig);
+          // Add allCards to each card's data
+          const allCardsTemplateData = buildTemplateContext(allCardsList, worldData, templateConfig);
+          const allCardsArray = Array.isArray(allCardsTemplateData) ? allCardsTemplateData : allCardsTemplateData.cards;
+          if (Array.isArray(cardDataArray)) {
+            cardDataArray.forEach(cardData => {
+              cardData.allCards = allCardsArray;
+            });
+          }
           positionCardsHtml = cardDataArray
             .map(cardData => positionCardTemplate(cardData))
             .join("");
@@ -907,12 +927,28 @@ const renderTracker = (mesId, get_settings, getReactionEmoji, darkenColor, lastS
                       
                       // Use the position-specific template
                       let blockCardsHtml = "";
+                      
+                      // Get all cards from chat metadata for allCards attribute
+                      const blockAllCardsFromStorage = getAllCards();
+                      const blockAllCardsList = Object.values(blockAllCardsFromStorage);
+                      
                       if (isTabbedTemplate) {
                         const blockTemplateData = buildTemplateContext(blockCharacters, worldData, blockTemplateConfig);
+                        // Add allCards to template data
+                        const blockAllCardsTemplateData = buildTemplateContext(blockAllCardsList, worldData, blockTemplateConfig);
+                        blockTemplateData.allCards = blockAllCardsTemplateData.cards;
                         DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Block template data for placeholder ${index}:`, JSON.stringify(blockTemplateData, null, 2));
                         blockCardsHtml = positionCardTemplate(blockTemplateData);
                       } else {
                         const blockCardDataArray = buildTemplateContext(blockCharacters, worldData, blockTemplateConfig);
+                        // Add allCards to each card's data
+                        const blockAllCardsTemplateData = buildTemplateContext(blockAllCardsList, worldData, blockTemplateConfig);
+                        const blockAllCardsArray = Array.isArray(blockAllCardsTemplateData) ? blockAllCardsTemplateData : blockAllCardsTemplateData.cards;
+                        if (Array.isArray(blockCardDataArray)) {
+                          blockCardDataArray.forEach(cardData => {
+                            cardData.allCards = blockAllCardsArray;
+                          });
+                        }
                         blockCardsHtml = blockCardDataArray
                           .map(cardData => {
                             DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Non-tabbed template data for ${cardData.characterName}:`, JSON.stringify(cardData, null, 2));
@@ -1037,22 +1073,36 @@ const renderTrackerWithoutSim = (mesId, get_settings, getReactionEmoji, darkenCo
 };
 
 const refreshAllCards = (get_settings, CONTAINER_ID, renderTrackerWithoutSim) => {
-  DEBUG && console.log(`[SST] [${MODULE_NAME}]`, "Refreshing all tracker cards on screen.");
-
+  console.log(`[SST DEBUG] refreshAllCards START - globalLeftSidebar exists: ${!!globalLeftSidebar}, globalRightSidebar exists: ${!!globalRightSidebar}`);
+  
   // First, remove all existing tracker containers to prevent duplicates
+  // Remove legacy containers (for backward compatibility)
   document.querySelectorAll(`#${CONTAINER_ID}`).forEach((container) => {
     container.remove();
+  });
+  
+  // Remove position-specific containers (for multi-position templates)
+  ['inline', 'left', 'right', 'above', 'bottom'].forEach(position => {
+    const positionContainerId = getContainerId(position.toUpperCase());
+    document.querySelectorAll(`#${positionContainerId}`).forEach((container) => {
+      container.remove();
+    });
   });
 
   // Get all message divs currently in the chat DOM
   const visibleMessages = document.querySelectorAll("div#chat .mes");
+  console.log(`[SST DEBUG] Found ${visibleMessages.length} visible messages`);
+  
   visibleMessages.forEach((messageElement) => {
     const mesId = messageElement.getAttribute("mesid");
     if (mesId) {
+      console.log(`[SST DEBUG] Rendering message ${mesId}`);
       // Call the existing render function for each visible message
       renderTrackerWithoutSim(parseInt(mesId, 10));
     }
   });
+  
+  console.log(`[SST DEBUG] refreshAllCards END - globalLeftSidebar exists: ${!!globalLeftSidebar}, globalRightSidebar exists: ${!!globalRightSidebar}`);
 };
 
 // Export functions

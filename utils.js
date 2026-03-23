@@ -5,7 +5,7 @@ import { parseTrackerData, generateTrackerBlock, detectFormat } from "./formatUt
 const MODULE_NAME = "silly-sim-tracker";
 
 // Debug flag - set to false for production to improve performance
-const DEBUG = false;
+const DEBUG = true;
 
 // --- UTILITY FUNCTIONS ---
 const log = (message) => DEBUG && console.log(`[SST] [${MODULE_NAME}]`, message);
