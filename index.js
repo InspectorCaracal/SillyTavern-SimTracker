@@ -100,7 +100,7 @@ globalThis.simTrackerGenInterceptor = async function (
 ) {
   log(`simTrackerGenInterceptor called with type: ${type}`);
 
-  // Note: isGenerationInProgress is managed within the renderer module
+  setGenerationInProgress(true);
   setGenerationType(type);
 
   // Handle regenerate and swipe conditions to reset last_sim_stats macro
@@ -966,16 +966,6 @@ cards:
 
     const context = getContext();
     const { eventSource, event_types } = context;
-
-    // Set generation in progress flag when generation starts
-    eventSource.on(event_types.GENERATION_STARTED, () => {
-      setGenerationInProgress(true);
-    });
-
-    // Also set generation in progress flag for after commands event
-    eventSource.on(event_types.GENERATION_AFTER_COMMANDS, () => {
-      setGenerationInProgress(true);
-    });
 
     eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, async (mesId) => {
       // Clear generation in progress flag when message is rendered
