@@ -1,0 +1,34 @@
+{
+  "templateName": "Sidebar + Inline Combo",
+  "templateAuthor": "SillySimTracker",
+  "templatePosition": "RIGHT",
+  "htmlTemplate": "<!-- TEMPLATE NAME: Sidebar + Inline Combo -->\n<!-- AUTHOR: SillySimTracker -->\n<!-- POSITION: RIGHT -->\n<style>\n  .sim-tracker-container {\n    display: flex;\n    flex-direction: column;\n    gap: 20px;\n    width: 100%;\n    position: relative;\n    height: 100%;\n  }\n  \n  .sim-tracker-tabs {\n    display: flex;\n    flex-direction: column;\n    gap: 12px;\n    position: absolute;\n    right: 0;\n    top: 0;\n    bottom: 0;\n    justify-content: center;\n    z-index: 10;\n  }\n  \n  .sim-tracker-tab {\n    width: 60px;\n    height: 60px;\n    border-radius: 8px;\n    cursor: pointer;\n    display: flex;\n    justify-content: center;\n    align-items: center;\n    background: linear-gradient(145deg, #2c2c2c, #1a1a1a);\n    border: 1px solid rgba(255, 255, 255, 0.1);\n  }\n  \n  .sim-tracker-card {\n    width: 280px;\n    border-radius: 12px;\n    padding: 16px;\n    position: absolute;\n    right: 80px;\n    top: 50%;\n    transform: translateY(-50%);\n    display: none;\n  }\n  \n  .sim-tracker-card.active {\n    display: block;\n  }\n  \n  .character-header {\n    font-size: 18px;\n    font-weight: bold;\n    margin-bottom: 12px;\n  }\n  \n  .stat-item {\n    margin-bottom: 8px;\n  }\n<\/style>\n\n<div class=\"sim-tracker-container\">\n  <div class=\"sim-tracker-tabs\">\n    {{#each cards}}\n    <div class=\"sim-tracker-tab\" data-character=\"{{@index}}\">\n      {{initials characterName}}\n    </div>\n    {{\/each}}\n  </div>\n\n  {{#each cards}}\n  <div class=\"sim-tracker-card\" data-character=\"{{@index}}\" style=\"background: {{bgColor}};\">\n    <div class=\"character-header\">{{characterName}}</div>\n    <div class=\"stat-item\">Affection: {{stats.ap}}</div>\n    <div class=\"stat-item\">Desire: {{stats.dp}}</div>\n    <div class=\"stat-item\">Trust: {{stats.trust}}</div>\n  </div>\n  {{\/each}}\n<\/div>\n\n<!-- POSITION: INLINE -->\n<style>\n  .inline-container {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 10px;\n    padding: 10px 0;\n  }\n  \n  .inline-card {\n    display: inline-flex;\n    align-items: center;\n    gap: 8px;\n    padding: 8px 12px;\n    border-radius: 20px;\n    background: linear-gradient(145deg, {{defaultBgColor}}, {{darkenColor defaultBgColor 80}});\n    border: 1px solid rgba(255,255,255,0.1);\n    font-size: 14px;\n  }\n  \n  .inline-initials {\n    width: 28px;\n    height: 28px;\n    border-radius: 50%;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    background: rgba(255,255,255,0.2);\n    font-weight: bold;\n  }\n  \n  .inline-stats {\n    display: flex;\n    gap: 12px;\n    font-size: 12px;\n  }\n  \n  .inline-stat {\n    display: flex;\n    align-items: center;\n    gap: 4px;\n  }\n<\/style>\n\n<div class=\"inline-container\">\n  {{#each cards}}\n  <div class=\"inline-card\">\n    <div class=\"inline-initials\">{{initials characterName}}</div>\n    <div class=\"inline-stats\">\n      <span class=\"inline-stat\">♥ {{stats.ap}}</span>\n      <span class=\"inline-stat\">⚡ {{stats.dp}}</span>\n    </div>\n  </div>\n  {{\/each}}\n<\/div>",
+  "sysPrompt": "You are tracking character stats for a simulation. Output the current stats in a sim code block.",
+  "fieldMappings": [
+    {
+      "key": "ap",
+      "description": "Affection Points (0-200)",
+      "displayName": "AP",
+      "type": "number"
+    },
+    {
+      "key": "dp",
+      "description": "Desire Points (0-150)",
+      "displayName": "DP",
+      "type": "number"
+    },
+    {
+      "key": "trust",
+      "description": "Trust Level (0-100)",
+      "displayName": "TRUST",
+      "type": "number"
+    }
+  ],
+  "extSettings": {
+    "codeBlockIdentifier": "sim",
+    "defaultBgColor": "#6a5acd",
+    "showThoughtBubble": true,
+    "hideSimBlocks": true,
+    "templateFile": "combo-sidebar-inline-template.json"
+  }
+}

@@ -3,8 +3,177 @@ import { DEBUG } from "./utils.js";
 
 const MODULE_NAME = "silly-sim-tracker";
 
-// Module-level variable to store the current template position
+// Module-level variables to store template data
 let currentTemplatePosition = "BOTTOM";
+let compiledCardTemplates = {};  // Map of position -> compiled template
+let availableTemplatePositions = ["BOTTOM"];  // Array of available positions
+
+// New function to extract multiple template sections based on POSITION comments
+// Supports two formats:
+// 1. Single section: POSITION -> CARD_TEMPLATE_START -> content -> CARD_TEMPLATE_END
+// 2. Multi-section: Each POSITION has its own START/END markers
+const extractTemplateSections = (templateHtml) => {
+  if (!templateHtml) return { "BOTTOM": templateHtml };
+  
+  const sections = {};
+  const positionRegex = /<!--\s*POSITION\s*:\s*(.*?)\s*-->/gi;
+  const startMarker = "<!-- CARD_TEMPLATE_START -->";
+  const endMarker = "<!-- CARD_TEMPLATE_END -->";
+  
+  // Find all POSITION comments
+  const matches = [...templateHtml.matchAll(positionRegex)];
+  
+  if (matches.length === 0) {
+    // No POSITION comments found - treat entire template as BOTTOM
+    return { "BOTTOM": templateHtml };
+  }
+  
+  // Check if this is a multi-section template (each POSITION has its own START/END)
+  // or a single-section template (one START/END for all content)
+  const hasMultipleStartMarkers = (templateHtml.match(/<!--\s*CARD_TEMPLATE_START\s*-->/gi) || []).length > 1;
+  
+  // Process each POSITION comment
+  matches.forEach((match, index) => {
+    const position = match[1].trim().toUpperCase();
+    const positionEndIndex = match.index + match[0].length;
+    
+    let sectionContent = "";
+    
+    if (hasMultipleStartMarkers) {
+      // Multi-section format: Each POSITION has its own START/END markers
+      // Look for START marker after this POSITION
+      const startIndex = templateHtml.indexOf(startMarker, positionEndIndex);
+      if (startIndex !== -1) {
+        // Look for END marker after START
+        const contentStart = startIndex + startMarker.length;
+        const endIndex = templateHtml.indexOf(endMarker, contentStart);
+        
+        if (endIndex !== -1) {
+          sectionContent = templateHtml.substring(contentStart, endIndex).trim();
+        } else {
+          // No END marker found, use until next POSITION or EOF
+          const nextMatch = matches[index + 1];
+          const sectionEnd = nextMatch ? nextMatch.index : templateHtml.length;
+          sectionContent = templateHtml.substring(contentStart, sectionEnd).trim();
+        }
+      }
+    } else {
+      // Single-section format: One START/END for all content
+      // Find the end of this section (next POSITION comment or EOF)
+      const nextMatch = matches[index + 1];
+      const sectionEndIndex = nextMatch ? nextMatch.index : templateHtml.length;
+      
+      // Check if there's a START marker in this section
+      const sectionText = templateHtml.substring(positionEndIndex, sectionEndIndex);
+      const startIndex = sectionText.indexOf(startMarker);
+      
+      if (startIndex !== -1) {
+        // Has START marker, look for END marker
+        const contentStart = startIndex + startMarker.length;
+        const endIndex = sectionText.indexOf(endMarker, contentStart);
+        
+        if (endIndex !== -1) {
+          sectionContent = sectionText.substring(contentStart, endIndex).trim();
+        } else {
+          sectionContent = sectionText.substring(contentStart).trim();
+        }
+      } else {
+        // No START marker, use the whole section (fallback for old format)
+        sectionContent = sectionText.trim();
+      }
+    }
+    
+    if (sectionContent) {
+      if (sections[position]) {
+        // If section already exists, append to it
+        sections[position] += '\n' + sectionContent;
+      } else {
+        sections[position] = sectionContent;
+      }
+    }
+  });
+  
+  // If no sections were extracted, fall back to treating entire template as BOTTOM
+  if (Object.keys(sections).length === 0) {
+    return { "BOTTOM": templateHtml };
+  }
+  
+  DEBUG && console.log(`[SST] [${MODULE_NAME}] Extracted template sections:`, Object.keys(sections));
+  return sections;
+};
+
+// Helper function to get wrapper template with position-specific ID
+const getWrapperTemplate = (position) => 
+  `<div id="silly-sim-tracker-container-${position.toLowerCase()}" class="silly-sim-tracker-container" data-position="${position}" style="width:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:block !important;visibility:visible !important;">{{{cardsHtml}}}</div>`;
+
+// Helper function to compile template sections for multiple positions
+const compileTemplateSections = (cardTemplate, sourceName) => {
+  // Extract sections based on POSITION comments
+  const sections = extractTemplateSections(cardTemplate);
+  
+  // Compile each section
+  compiledCardTemplates = {};
+  compiledWrapperTemplates = {};
+  availableTemplatePositions = [];
+  
+  Object.keys(sections).forEach(position => {
+    try {
+      compiledCardTemplates[position] = Handlebars.compile(sections[position]);
+      compiledWrapperTemplates[position] = Handlebars.compile(getWrapperTemplate(position));
+      availableTemplatePositions.push(position);
+      DEBUG && console.log(`[SST] [${MODULE_NAME}] Compiled template section for position: ${position} from ${sourceName}`);
+    } catch (error) {
+      console.error(`[SST] [${MODULE_NAME}] ╔══════════════════════════════════════════════════════════╗`);
+      console.error(`[SST] [${MODULE_NAME}] ║  TEMPLATE COMPILATION ERROR`);
+      console.error(`[SST] [${MODULE_NAME}] ╠══════════════════════════════════════════════════════════╣`);
+      console.error(`[SST] [${MODULE_NAME}] ║  Source: ${sourceName}`);
+      console.error(`[SST] [${MODULE_NAME}] ║  Position: ${position}`);
+      console.error(`[SST] [${MODULE_NAME}] ║  Error: ${error.message}`);
+      
+      // Try to extract line number from Handlebars error message
+      const lineMatch = error.message.match(/line\s+(\d+)/i);
+      if (lineMatch) {
+        const errorLine = parseInt(lineMatch[1], 10);
+        console.error(`[SST] [${MODULE_NAME}] ║  Line: ${errorLine}`);
+        
+        // Show context around the error
+        const lines = sections[position].split('\n');
+        const startLine = Math.max(0, errorLine - 3);
+        const endLine = Math.min(lines.length, errorLine + 2);
+        console.error(`[SST] [${MODULE_NAME}] ╠══════════════════════════════════════════════════════════╣`);
+        console.error(`[SST] [${MODULE_NAME}] ║  Code Context:`);
+        for (let i = startLine; i < endLine; i++) {
+          const lineNum = i + 1;
+          const prefix = lineNum === errorLine ? '>>> ' : '    ';
+          const lineContent = lines[i].substring(0, 70).replace(/\s+/g, ' ');
+          console.error(`[SST] [${MODULE_NAME}] ║${prefix}${lineNum.toString().padStart(3)}: ${lineContent}`);
+        }
+      }
+      
+      console.error(`[SST] [${MODULE_NAME}] ╚══════════════════════════════════════════════════════════╝`);
+      
+      // Show a toast notification with the error
+      toastr.error(
+        `Template error in ${sourceName} [${position}]: ${error.message}`,
+        "Template Compilation Failed"
+      );
+    }
+  });
+  
+  // Set the primary position for backward compatibility
+  if (availableTemplatePositions.length > 0) {
+    currentTemplatePosition = availableTemplatePositions[0];
+    DEBUG && console.log(`[SST] [${MODULE_NAME}] Primary template position set to: ${currentTemplatePosition}`);
+  }
+  
+  // Also set the legacy single template for backward compatibility
+  if (compiledCardTemplates[currentTemplatePosition]) {
+    compiledCardTemplate = compiledCardTemplates[currentTemplatePosition];
+    compiledWrapperTemplate = compiledWrapperTemplates[currentTemplatePosition];
+  }
+  
+  return compiledCardTemplates;
+};
 
 const unescapeHtml = (safe) => {
   if (typeof safe !== "string") return safe;
@@ -17,9 +186,13 @@ const unescapeHtml = (safe) => {
 };
 
 // --- TEMPLATES ---
+// Default wrapper template - will be replaced by position-specific versions
 const wrapperTemplate = `<div id="silly-sim-tracker-container" style="width:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:block !important;visibility:visible !important;">{{{cardsHtml}}}</div>`;
 let compiledWrapperTemplate = Handlebars.compile(wrapperTemplate);
 let compiledCardTemplate = null;
+
+// Store compiled wrapper templates per position
+let compiledWrapperTemplates = {};
 
 // Register Handlebars helpers for template logic
 Handlebars.registerHelper("eq", function (a, b) {
@@ -141,7 +314,8 @@ async function populateTemplateDropdown(get_settings) {
     "dating-card-template-sidebar-left-tabs.json",
     "dating-card-template-macro.json",
     "dating-card-template-dynamic.json",
-    "inline-simple-template.json"
+    "inline-simple-template.json",
+    "combo-sidebar-inline-template.json"
   ];
 
   const templateOptions = [];
@@ -267,7 +441,7 @@ function handleCustomTemplateUpload(event, set_settings, loadTemplate, refreshAl
 const loadTemplate = async (get_settings, set_settings) => {
   if (!get_settings || !set_settings) {
     console.error(`[SST] [${MODULE_NAME}] loadTemplate called without required get_settings and set_settings functions`);
-    return;
+    return {};
   }
   
   const customTemplateHtml = get_settings("customTemplateHtml");
@@ -275,50 +449,11 @@ const loadTemplate = async (get_settings, set_settings) => {
   if (customTemplateHtml && customTemplateHtml.trim() !== "") {
     DEBUG && console.log(`[SST] [${MODULE_NAME}] Loading template from custom HTML stored in settings.`);
     try {
-      const cardStartMarker = "<!-- CARD_TEMPLATE_START -->";
-      const cardEndMarker = "<!-- CARD_TEMPLATE_END -->";
-      let cardTemplate = "";
-
-      // Extract position metadata from the templatePosition setting or default to BOTTOM
-      const templatePosition = get_settings("templatePosition") || extractTemplatePosition(customTemplateHtml) || "BOTTOM";
-
-      const startIndex = customTemplateHtml.indexOf(cardStartMarker);
-      const endIndex = customTemplateHtml.indexOf(cardEndMarker);
-
-      if (startIndex !== -1 && endIndex !== -1) {
-        cardTemplate = customTemplateHtml
-          .substring(startIndex + cardStartMarker.length, endIndex)
-          .trim();
-      } else {
-        let cleanedResponse = customTemplateHtml
-          .replace(/<!--[\s\S]*?-->/g, "")
-          .trim();
-        const templateVarRegex = /\{\{[^}]+\}\}/;
-        const divMatches = [
-          ...cleanedResponse.matchAll(/<div[^>]*>[\s\S]*?<\/div>/g),
-        ];
-        let bestMatch = null;
-        let maxLength = 0;
-        for (const match of divMatches) {
-          if (templateVarRegex.test(match[0]) && match[0].length > maxLength) {
-            bestMatch = match[0];
-            maxLength = match[0].length;
-          }
-        }
-        if (bestMatch) {
-          cardTemplate = bestMatch;
-        } else {
-          throw new Error(
-            "Could not find template content with either markers or Handlebars variables."
-          );
-        }
-      }
-
-      compiledCardTemplate = Handlebars.compile(cardTemplate);
-      // Store the template position in a module-level variable for use during rendering
-      currentTemplatePosition = templatePosition;
-      DEBUG && console.log(`[SST] [${MODULE_NAME}] Custom HTML template compiled successfully. Position: ${templatePosition}`);
-      return; // Exit successfully
+      // Pass the full template content to compileTemplateSections
+      // which will handle POSITION comments and CARD_TEMPLATE markers internally
+      compileTemplateSections(customTemplateHtml.trim(), "custom HTML");
+      DEBUG && console.log(`[SST] [${MODULE_NAME}] Custom HTML template compiled successfully. Positions: ${availableTemplatePositions.join(', ')}`);
+      return compiledCardTemplates;
     } catch (error) {
       console.error(`[SST] [${MODULE_NAME}] Error parsing custom HTML template: ${error.message}. Reverting to default file-based template.`);
       toastr.error(
@@ -341,52 +476,12 @@ const loadTemplate = async (get_settings, set_settings) => {
         if (presetData) {
           DEBUG && console.log(`[SST] [${MODULE_NAME}] Loading template from user preset: ${templateFile}`);
           
-          // Extract position metadata from the preset data
-          const templatePosition = presetData.templatePosition || "BOTTOM";
-          
-          // Parse the template content, unescaping HTML if needed
-        const cardStartMarker = "<!-- CARD_TEMPLATE_START -->";
-        const cardEndMarker = "<!-- CARD_TEMPLATE_END -->";
-        let cardTemplate = "";
-        // First unescape the HTML template
-        const unescapedHtmlTemplate = unescapeHtml(presetData.htmlTemplate);
-        const startIndex = unescapedHtmlTemplate.indexOf(cardStartMarker);
-        const endIndex = unescapedHtmlTemplate.indexOf(cardEndMarker);
-        
-        if (startIndex !== -1 && endIndex !== -1) {
-          cardTemplate = unescapedHtmlTemplate
-            .substring(startIndex + cardStartMarker.length, endIndex)
-            .trim();
-        } else {
-          let cleanedResponse = unescapedHtmlTemplate
-            .replace(/<!--[\s\S]*?-->/g, "")
-            .trim();
-          const templateVarRegex = /\{\{[^}]+\}\}/;
-          const divMatches = [
-            ...cleanedResponse.matchAll(/<div[^>]*>[\s\S]*?<\/div>/g),
-          ];
-          let bestMatch = null;
-          let maxLength = 0;
-          for (const match of divMatches) {
-            if (templateVarRegex.test(match[0]) && match[0].length > maxLength) {
-              bestMatch = match[0];
-              maxLength = match[0].length;
-            }
-          }
-          if (bestMatch) {
-            cardTemplate = bestMatch;
-          } else {
-            throw new Error(
-              "Could not find template content with either markers or Handlebars variables."
-            );
-          }
-        }
-          
-          compiledCardTemplate = Handlebars.compile(cardTemplate);
-          // Store the template position in a module-level variable for use during rendering
-          currentTemplatePosition = templatePosition;
-          DEBUG && console.log(`[SST] [${MODULE_NAME}] User preset '${templateFile}' compiled successfully. Position: ${templatePosition}`);
-          return; // Exit successfully
+          // Unescape the HTML template and pass to compileTemplateSections
+          // which will handle POSITION comments and CARD_TEMPLATE markers internally
+          const unescapedHtmlTemplate = unescapeHtml(presetData.htmlTemplate);
+          compileTemplateSections(unescapedHtmlTemplate.trim(), `user preset '${templateFile}'`);
+          DEBUG && console.log(`[SST] [${MODULE_NAME}] User preset '${templateFile}' compiled successfully. Positions: ${availableTemplatePositions.join(', ')}`);
+          return compiledCardTemplates;
         }
       } catch (error) {
         console.error(`[SST] [${MODULE_NAME}] Could not load or parse user preset '${templateFile}'. Using default template.`);
@@ -407,52 +502,12 @@ const loadTemplate = async (get_settings, set_settings) => {
         
         DEBUG && console.log(`[SST] [${MODULE_NAME}] Loading template from default file: ${defaultPath}`);
 
-        // Extract position metadata from the JSON data
-        const templatePosition = jsonData.templatePosition || "BOTTOM";
-
-        // Parse the template content, unescaping HTML if needed
-        const cardStartMarker = "<!-- CARD_TEMPLATE_START -->";
-        const cardEndMarker = "<!-- CARD_TEMPLATE_END -->";
-        let cardTemplate = "";
-        // First unescape the HTML template
+        // Unescape the HTML template and pass to compileTemplateSections
+        // which will handle POSITION comments and CARD_TEMPLATE markers internally
         const unescapedHtmlTemplate = unescapeHtml(jsonData.htmlTemplate);
-        const startIndex = unescapedHtmlTemplate.indexOf(cardStartMarker);
-        const endIndex = unescapedHtmlTemplate.indexOf(cardEndMarker);
-        
-        if (startIndex !== -1 && endIndex !== -1) {
-          cardTemplate = unescapedHtmlTemplate
-            .substring(startIndex + cardStartMarker.length, endIndex)
-            .trim();
-        } else {
-          let cleanedResponse = unescapedHtmlTemplate
-            .replace(/<!--[\s\S]*?-->/g, "")
-            .trim();
-          const templateVarRegex = /\{\{[^}]+\}\}/;
-          const divMatches = [
-            ...cleanedResponse.matchAll(/<div[^>]*>[\s\S]*?<\/div>/g),
-          ];
-          let bestMatch = null;
-          let maxLength = 0;
-          for (const match of divMatches) {
-            if (templateVarRegex.test(match[0]) && match[0].length > maxLength) {
-              bestMatch = match[0];
-              maxLength = match[0].length;
-            }
-          }
-          if (bestMatch) {
-            cardTemplate = bestMatch;
-          } else {
-            throw new Error(
-              "Could not find template content with either markers or Handlebars variables."
-            );
-          }
-        }
-        
-        compiledCardTemplate = Handlebars.compile(cardTemplate);
-        // Store the template position in a module-level variable for use during rendering
-        currentTemplatePosition = templatePosition;
-        DEBUG && console.log(`[SST] [${MODULE_NAME}] Default template '${templateFile}' compiled successfully. Position: ${templatePosition}`);
-        return; // Exit successfully
+        compileTemplateSections(unescapedHtmlTemplate.trim(), `default template '${templateFile}'`);
+        DEBUG && console.log(`[SST] [${MODULE_NAME}] Default template '${templateFile}' compiled successfully. Positions: ${availableTemplatePositions.join(', ')}`);
+        return compiledCardTemplates;
       } catch (error) {
         console.error(`[SST] [${MODULE_NAME}] Could not load or parse default template file '${templateFile}'. Using hardcoded fallback. Error: ${error.message}`);
       }
@@ -465,9 +520,10 @@ const loadTemplate = async (get_settings, set_settings) => {
         <b>Template Error</b><br>
         No custom template is loaded and the selected default template could not be found or parsed.
     </div>`;
-  compiledCardTemplate = Handlebars.compile(fallbackTemplate);
-  // Store the template position in a module-level variable for use during rendering
-  currentTemplatePosition = "BOTTOM";
+  
+  // Compile fallback as single BOTTOM section
+  compileTemplateSections(fallbackTemplate, "fallback");
+  return compiledCardTemplates;
 };
 
 // Export functions and variables
@@ -475,6 +531,12 @@ export {
   wrapperTemplate,
   compiledWrapperTemplate,
   compiledCardTemplate,
+  compiledCardTemplates,
+  compiledWrapperTemplates,
+  availableTemplatePositions,
+  getWrapperTemplate,
+  extractTemplateSections,
+  compileTemplateSections,
   get_extension_directory,
   populateTemplateDropdown,
   handleCustomTemplateUpload,

@@ -1,7 +1,14 @@
 // renderer.js - HTML card rendering code
 import { getContext } from "../../../extensions.js";
 import { messageFormatting } from "../../../../script.js";
-import { extractTemplatePosition, currentTemplatePosition } from "./templating.js";
+import { 
+  extractTemplatePosition, 
+  currentTemplatePosition, 
+  compiledCardTemplates, 
+  compiledWrapperTemplates,
+  availableTemplatePositions,
+  getWrapperTemplate 
+} from "./templating.js";
 import { parseTrackerData } from "./formatUtils.js";
 import { extractDisplayableFields, generateDynamicStatsHtml } from "./fieldMapping.js";
 import { DEBUG } from "./utils.js";
@@ -9,6 +16,9 @@ import { processSimData } from "./storage.js";
 
 const MODULE_NAME = "silly-sim-tracker";
 const CONTAINER_ID = "silly-sim-tracker-container";
+
+// Helper to get position-specific container ID
+const getContainerId = (position) => `silly-sim-tracker-container-${position.toLowerCase()}`;
 
 // Cache for message data hashes to enable selective re-rendering
 const messageDataCache = new Map();
@@ -62,7 +72,9 @@ function buildTemplateContext(characterList, worldData, templateConfig) {
     get_settings,
     extractDisplayableFields,
     generateDynamicStatsHtml,
-    isTabbedTemplate
+    isTabbedTemplate,
+    fieldMappings,
+    usePatternDetectionFallback
   } = templateConfig;
 
   if (isTabbedTemplate) {
@@ -80,7 +92,7 @@ function buildTemplateContext(characterList, worldData, templateConfig) {
         const bgColor = stats.bg || stats.bgColor || stats.color || defaultBgColor;
         
         // Extract dynamic fields for this character
-        const dynamicFields = extractDisplayableFields(stats, worldData);
+        const dynamicFields = extractDisplayableFields(stats, worldData, fieldMappings, usePatternDetectionFallback);
         console.log('[SST DEBUG] buildTemplateContext - stats:', stats, 'dynamicFields:', dynamicFields);
         const dynamicStatsHtml = generateDynamicStatsHtml(dynamicFields);
         console.log('[SST DEBUG] Template context built - dynamicFields included:', dynamicFields?.length || 0, 'fields');
@@ -140,7 +152,7 @@ function buildTemplateContext(characterList, worldData, templateConfig) {
         const bgColor = stats.bg || stats.bgColor || stats.color || defaultBgColor;
         
         // Extract dynamic fields for this character
-        const dynamicFields = extractDisplayableFields(stats, worldData);
+        const dynamicFields = extractDisplayableFields(stats, worldData, fieldMappings, usePatternDetectionFallback);
         const dynamicStatsHtml = generateDynamicStatsHtml(dynamicFields);
         
         return {
@@ -506,7 +518,7 @@ function attachTabEventListeners(sidebarElement) {
 }
 
 // --- RENDER LOGIC ---
-const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString, withSim = true) => {
+const renderTracker = (mesId, get_settings, getReactionEmoji, darkenColor, lastSimJsonString, withSim = true) => {
   try {
     if (!get_settings("isEnabled")) return;
     const context = getContext();
@@ -749,6 +761,9 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
                                (customTemplateHtml && customTemplateHtml.includes("{{#each cards}}"));
 
       // Build template configuration for the helper
+      const fieldMappings = get_settings("fieldMappings") || [];
+      const usePatternDetectionFallback = get_settings("usePatternDetectionFallback") !== false; // Default to true
+      
       const templateConfig = {
         currentDate,
         currentTime,
@@ -758,211 +773,267 @@ const renderTracker = (mesId, get_settings, compiledWrapperTemplate, compiledCar
         get_settings,
         extractDisplayableFields,
         generateDynamicStatsHtml,
-        isTabbedTemplate
+        isTabbedTemplate,
+        fieldMappings,
+        usePatternDetectionFallback
       };
 
-      let cardsHtml = "";
-      if (isTabbedTemplate) {
-        // Use helper to build template context
-        const templateData = buildTemplateContext(characterList, worldData, templateConfig);
-        cardsHtml = compiledCardTemplate(templateData);
-      } else {
-        // Use helper to get individual card data
-        const cardDataArray = buildTemplateContext(characterList, worldData, templateConfig);
-        cardsHtml = cardDataArray
-          .map(cardData => compiledCardTemplate(cardData))
-          .join("");
-      }
-
-      // Use the template position from the templating module
-      const templatePosition = currentTemplatePosition;
-      DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Template position for message ${mesId}: "${templatePosition}"`);
+      // Get all available template positions from the templating module
+      const positions = availableTemplatePositions || [currentTemplatePosition];
+      DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Template positions for message ${mesId}: "${positions.join(', ')}"`);
       DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `hideSimBlocks setting: ${get_settings("hideSimBlocks")}`);
       DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `matches length: ${matches ? matches.length : 0}`);
 
-      // Handle different positions
-      switch (templatePosition) {
-        case "ABOVE":
-          // Insert above the message content (inside the message block)
-          const reasoningElement = messageElement.querySelector(
-            ".mes_reasoning_details"
-          );
-          if (reasoningElement) {
-            // Insert above reasoning details if they exist
-            const finalHtml =
-              compiledWrapperTemplate({ cardsHtml }) +
-              `<hr style="margin-top: 15px; margin-bottom: 20px;">`;
-            reasoningElement.insertAdjacentHTML("beforebegin", finalHtml);
-          } else {
-            // If no reasoning details, insert at the beginning of the message
-            const finalHtml =
-              compiledWrapperTemplate({ cardsHtml }) +
-              `<hr style="margin-top: 15px; margin-bottom: 20px;">`;
-            messageElement.insertAdjacentHTML("afterbegin", finalHtml);
-          }
-          break;
-        case "LEFT":
-          // Update the global left sidebar with the latest data
-          updateLeftSidebar(compiledWrapperTemplate({ cardsHtml }));
-          break;
-        case "RIGHT":
-          // Update the global right sidebar with the latest data
-          updateRightSidebar(compiledWrapperTemplate({ cardsHtml }));
-          break;
-        case "MACRO":
-          // For MACRO position, replace the placeholder in the message
-          const placeholder = messageElement.querySelector(
-            "#sst-macro-placeholder"
-          );
-          if (placeholder) {
-            const finalHtml = compiledWrapperTemplate({ cardsHtml });
-            placeholder.insertAdjacentHTML("beforebegin", finalHtml);
-            placeholder.remove();
-          }
-          break;
-        case "INLINE":
-          DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Executing INLINE case`);
-          // For INLINE position, insert cards inline where sim blocks are/were
-          
-          if (matches && get_settings("hideSimBlocks")) {
-            DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `INLINE: sim blocks hidden, looking for text placeholders`);
-            // If sim blocks are hidden, look for text placeholders and replace them
-            let currentHtml = messageElement.innerHTML;
-            DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Current HTML contains placeholders:`, currentHtml.includes("[SST_INLINE_PLACEHOLDER_"));
+      // Iterate through all positions and render for each
+      positions.forEach(templatePosition => {
+        // Get the compiled template for this position
+        const positionCardTemplate = compiledCardTemplates[templatePosition];
+        const positionWrapperTemplate = compiledWrapperTemplates[templatePosition];
+        
+        if (!positionCardTemplate || !positionWrapperTemplate) {
+          DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `No compiled template for position: ${templatePosition}, skipping`);
+          return;
+        }
+
+        // Generate cards HTML for this position
+        let positionCardsHtml = "";
+        if (isTabbedTemplate) {
+          const templateData = buildTemplateContext(characterList, worldData, templateConfig);
+          positionCardsHtml = positionCardTemplate(templateData);
+        } else {
+          const cardDataArray = buildTemplateContext(characterList, worldData, templateConfig);
+          positionCardsHtml = cardDataArray
+            .map(cardData => positionCardTemplate(cardData))
+            .join("");
+        }
+
+        // Handle different positions
+        switch (templatePosition) {
+          case "ABOVE":
+            // Insert above the message content (inside the message block)
+            const reasoningElement = messageElement.querySelector(
+              ".mes_reasoning_details"
+            );
+            const aboveContainerId = getContainerId("ABOVE");
             
-            // Find all text placeholders (try both formats - with and without double underscores)
-            let placeholderRegex = /\[SST_INLINE_PLACEHOLDER_\d+\]/g;
-            let placeholderMatches = currentHtml.match(placeholderRegex);
-            
-            if (!placeholderMatches || placeholderMatches.length === 0) {
-              // Try without double underscores in case messageFormatting stripped them
-              placeholderRegex = /SST_INLINE_PLACEHOLDER_\d+/g;
-              placeholderMatches = currentHtml.match(placeholderRegex);
-              DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Trying without double underscores, found ${placeholderMatches ? placeholderMatches.length : 0} placeholders`);
-            }
-            
-            DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Found ${placeholderMatches ? placeholderMatches.length : 0} text placeholders`);
-            DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Available sim blocks data: ${simBlocksData.length}`);
-            
-            if (placeholderMatches && placeholderMatches.length > 0 && simBlocksData.length > 0) {
-              // Create individual cards for each sim block
-              let updatedHtml = currentHtml;
-              
-              placeholderMatches.forEach((placeholder, index) => {
-                if (index < simBlocksData.length) {
-                  // Get data for this specific sim block
-                  const blockData = simBlocksData[index];
-                  const blockCharacters = blockData.cards; // Use 'cards' instead of 'characters'
-                  
-                  DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Creating card for placeholder ${index} with ${blockCharacters.length} characters`);
-                  
-                  // Process character data for this block only
-                  if (blockCharacters.length > 0) {
-                    // Note: Data persistence happens once at the message level,
-                    // not per-block in inline mode
-                    
-                    // Build template configuration - use merged world data for complete context  
-                    const blockTemplateConfig = {
-                      currentDate,
-                      currentTime,
-                      defaultBgColor,
-                      darkenColor,
-                      getReactionEmoji,
-                      get_settings,
-                      extractDisplayableFields,
-                      generateDynamicStatsHtml,
-                      isTabbedTemplate
-                    };
-                    
-                    // Use the helper function to create consistent context
-                    let blockCardsHtml = "";
-                    if (isTabbedTemplate) {
-                      const blockTemplateData = buildTemplateContext(blockCharacters, worldData, blockTemplateConfig);
-                      DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Block template data for placeholder ${index}:`, JSON.stringify(blockTemplateData, null, 2));
-                      blockCardsHtml = compiledCardTemplate(blockTemplateData);
-                    } else {
-                      const blockCardDataArray = buildTemplateContext(blockCharacters, worldData, blockTemplateConfig);
-                      blockCardsHtml = blockCardDataArray
-                        .map(cardData => {
-                          DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Non-tabbed template data for ${cardData.characterName}:`, JSON.stringify(cardData, null, 2));
-                          return compiledCardTemplate(cardData);
-                        })
-                        .join("");
-                    }
-                    
-                    // Wrap the cards HTML with the wrapper template
-                    const blockFinalHtml = compiledWrapperTemplate({ cardsHtml: blockCardsHtml });
-                    
-                    // Replace this placeholder with the block's cards
-                    updatedHtml = updatedHtml.replace(placeholder, blockFinalHtml);
-                  } else {
-                    // Remove empty placeholder
-                    updatedHtml = updatedHtml.replace(placeholder, "");
-                  }
-                } else {
-                  // Remove extra placeholders that don't have corresponding data
-                  updatedHtml = updatedHtml.replace(placeholder, "");
-                }
-              });
-              
-              messageElement.innerHTML = updatedHtml;
-              DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Updated message HTML with individual inline cards`);
-            } else {
-              // Fallback: use merged data and insert at the end
-              DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `No matching placeholders found, using fallback with merged data`);
-              const finalHtmlInline = compiledWrapperTemplate({ cardsHtml });
-              messageElement.insertAdjacentHTML("beforeend", finalHtmlInline);
-            }
-          } else if (matches) {
-            // If sim blocks are visible, insert cards after the last sim block
-            const codeBlocks = messageElement.querySelectorAll("pre code");
-            let lastSimBlock = null;
-            
-            // Find the last sim block by checking code content
-            for (let i = codeBlocks.length - 1; i >= 0; i--) {
-              const codeElement = codeBlocks[i];
-              const content = codeElement.textContent || "";
-              if (content.trim().startsWith(identifier)) {
-                lastSimBlock = codeElement.closest("pre");
-                break;
+            // Check if already rendered
+            if (!messageElement.querySelector(`#${aboveContainerId}`)) {
+              if (reasoningElement) {
+                // Insert above reasoning details if they exist
+                const finalHtml =
+                  positionWrapperTemplate({ cardsHtml: positionCardsHtml }) +
+                  `<hr style="margin-top: 15px; margin-bottom: 20px;">`;
+                reasoningElement.insertAdjacentHTML("beforebegin", finalHtml);
+              } else {
+                // If no reasoning details, insert at the beginning of the message
+                const finalHtml =
+                  positionWrapperTemplate({ cardsHtml: positionCardsHtml }) +
+                  `<hr style="margin-top: 15px; margin-bottom: 20px;">`;
+                messageElement.insertAdjacentHTML("afterbegin", finalHtml);
               }
             }
+            break;
+          case "LEFT":
+            // Update the global left sidebar with the latest data
+            updateLeftSidebar(positionWrapperTemplate({ cardsHtml: positionCardsHtml }));
+            break;
+          case "RIGHT":
+            // Update the global right sidebar with the latest data
+            updateRightSidebar(positionWrapperTemplate({ cardsHtml: positionCardsHtml }));
+            break;
+          case "MACRO":
+            // For MACRO position, replace the placeholder in the message
+            const placeholder = messageElement.querySelector(
+              "#sst-macro-placeholder"
+            );
+            if (placeholder) {
+              const finalHtml = positionWrapperTemplate({ cardsHtml: positionCardsHtml });
+              placeholder.insertAdjacentHTML("beforebegin", finalHtml);
+              placeholder.remove();
+            }
+            break;
+          case "INLINE":
+            DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Executing INLINE case`);
+            // For INLINE position, insert cards inline where sim blocks are/were
             
-            const finalHtmlInline = compiledWrapperTemplate({ cardsHtml });
-            if (lastSimBlock) {
-              lastSimBlock.insertAdjacentHTML("afterend", finalHtmlInline);
+            if (matches && get_settings("hideSimBlocks")) {
+              DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `INLINE: sim blocks hidden, looking for text placeholders`);
+              // If sim blocks are hidden, look for text placeholders and replace them
+              let currentHtml = messageElement.innerHTML;
+              DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Current HTML contains placeholders:`, currentHtml.includes("[SST_INLINE_PLACEHOLDER_"));
+              
+              // Find all text placeholders (try both formats - with and without double underscores)
+              let placeholderRegex = /\[SST_INLINE_PLACEHOLDER_\d+\]/g;
+              let placeholderMatches = currentHtml.match(placeholderRegex);
+              
+              if (!placeholderMatches || placeholderMatches.length === 0) {
+                // Try without double underscores in case messageFormatting stripped them
+                placeholderRegex = /SST_INLINE_PLACEHOLDER_\d+/g;
+                placeholderMatches = currentHtml.match(placeholderRegex);
+                DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Trying without double underscores, found ${placeholderMatches ? placeholderMatches.length : 0} placeholders`);
+              }
+              
+              DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Found ${placeholderMatches ? placeholderMatches.length : 0} text placeholders`);
+              DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Available sim blocks data: ${simBlocksData.length}`);
+              
+              if (placeholderMatches && placeholderMatches.length > 0 && simBlocksData.length > 0) {
+                // Create individual cards for each sim block
+                let updatedHtml = currentHtml;
+                
+                placeholderMatches.forEach((placeholder, index) => {
+                  if (index < simBlocksData.length) {
+                    // Get data for this specific sim block
+                    const blockData = simBlocksData[index];
+                    const blockCharacters = blockData.cards;
+                    
+                    DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Creating card for placeholder ${index} with ${blockCharacters.length} characters`);
+                    
+                    // Process character data for this block only
+                    if (blockCharacters.length > 0) {
+                      // Build template configuration - use merged world data for complete context  
+                      const blockTemplateConfig = {
+                        currentDate,
+                        currentTime,
+                        defaultBgColor,
+                        darkenColor,
+                        getReactionEmoji,
+                        get_settings,
+                        extractDisplayableFields,
+                        generateDynamicStatsHtml,
+                        isTabbedTemplate,
+                        fieldMappings,
+                        usePatternDetectionFallback
+                      };
+                      
+                      // Use the position-specific template
+                      let blockCardsHtml = "";
+                      if (isTabbedTemplate) {
+                        const blockTemplateData = buildTemplateContext(blockCharacters, worldData, blockTemplateConfig);
+                        DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Block template data for placeholder ${index}:`, JSON.stringify(blockTemplateData, null, 2));
+                        blockCardsHtml = positionCardTemplate(blockTemplateData);
+                      } else {
+                        const blockCardDataArray = buildTemplateContext(blockCharacters, worldData, blockTemplateConfig);
+                        blockCardsHtml = blockCardDataArray
+                          .map(cardData => {
+                            DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Non-tabbed template data for ${cardData.characterName}:`, JSON.stringify(cardData, null, 2));
+                            return positionCardTemplate(cardData);
+                          })
+                          .join("");
+                      }
+                      
+                      // Wrap the cards HTML with the wrapper template
+                      const blockFinalHtml = positionWrapperTemplate({ cardsHtml: blockCardsHtml });
+                      
+                      // Replace this placeholder with the block's cards
+                      updatedHtml = updatedHtml.replace(placeholder, blockFinalHtml);
+                    } else {
+                      // Remove empty placeholder
+                      updatedHtml = updatedHtml.replace(placeholder, "");
+                    }
+                  } else {
+                    // Remove extra placeholders that don't have corresponding data
+                    updatedHtml = updatedHtml.replace(placeholder, "");
+                  }
+                });
+                
+                messageElement.innerHTML = updatedHtml;
+                DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `Updated message HTML with individual inline cards`);
+              } else {
+                // Fallback: use merged data and insert at the end
+                DEBUG && console.log(`[SST] [${MODULE_NAME}]`, `No matching placeholders found, using fallback with merged data`);
+                const finalHtmlInline = positionWrapperTemplate({ cardsHtml: positionCardsHtml });
+                messageElement.insertAdjacentHTML("beforeend", finalHtmlInline);
+              }
+            } else if (matches) {
+              // If sim blocks are visible, insert cards after the last sim block
+              const codeBlocks = messageElement.querySelectorAll("pre code");
+              let lastSimBlock = null;
+              
+              // Find the last sim block by checking code content
+              for (let i = codeBlocks.length - 1; i >= 0; i--) {
+                const codeElement = codeBlocks[i];
+                const content = codeElement.textContent || "";
+                if (content.trim().startsWith(identifier)) {
+                  lastSimBlock = codeElement.closest("pre");
+                  break;
+                }
+              }
+              
+              const finalHtmlInline = positionWrapperTemplate({ cardsHtml: positionCardsHtml });
+              if (lastSimBlock) {
+                lastSimBlock.insertAdjacentHTML("afterend", finalHtmlInline);
+              } else {
+                // Fallback: insert at the end if we can't find the sim block
+                messageElement.insertAdjacentHTML("beforeend", finalHtmlInline);
+              }
             } else {
-              // Fallback: insert at the end if we can't find the sim block
+              // No sim blocks found, insert at the end
+              const finalHtmlInline = positionWrapperTemplate({ cardsHtml: positionCardsHtml });
               messageElement.insertAdjacentHTML("beforeend", finalHtmlInline);
             }
-          } else {
-            // No sim blocks found, insert at the end
-            const finalHtmlInline = compiledWrapperTemplate({ cardsHtml });
-            messageElement.insertAdjacentHTML("beforeend", finalHtmlInline);
-          }
-          break;
-        case "BOTTOM":
-        default:
-          // Add a horizontal divider before the cards
-          const finalHtml =
-            `<hr style="margin-top: 15px; margin-bottom: 20px;">` +
-            compiledWrapperTemplate({ cardsHtml });
-          messageElement.insertAdjacentHTML("beforeend", finalHtml);
-          break;
-      }
+            break;
+          case "BOTTOM":
+          default:
+            // Add a horizontal divider before the cards
+            // Check if already rendered for this position
+            const bottomContainerId = getContainerId("BOTTOM");
+            if (!messageElement.querySelector(`#${bottomContainerId}`)) {
+              const finalHtml =
+                `<hr style="margin-top: 15px; margin-bottom: 20px;">` +
+                positionWrapperTemplate({ cardsHtml: positionCardsHtml });
+              messageElement.insertAdjacentHTML("beforeend", finalHtml);
+            }
+            break;
+        }
+      });
     }
   } catch (error) {
     // Clear the flag on error
     isGenerationInProgress = false;
-    console.log(`[SST] [${MODULE_NAME}]`,
-      `A critical error occurred in renderTracker for message ID ${mesId}. Please check the console. Error: ${error.stack}`
+    
+    // Log detailed error information
+    console.error(`[SST] [${MODULE_NAME}] ╔══════════════════════════════════════════════════════════╗`);
+    console.error(`[SST] [${MODULE_NAME}] ║  RENDER ERROR`);
+    console.error(`[SST] [${MODULE_NAME}] ╠══════════════════════════════════════════════════════════╣`);
+    console.error(`[SST] [${MODULE_NAME}] ║  Message ID: ${mesId}`);
+    console.error(`[SST] [${MODULE_NAME}] ║  Error Type: ${error.name}`);
+    console.error(`[SST] [${MODULE_NAME}] ║  Error Message: ${error.message}`);
+    
+    // Show which template positions were being rendered
+    const positions = availableTemplatePositions || [currentTemplatePosition];
+    console.error(`[SST] [${MODULE_NAME}] ║  Active Positions: ${positions.join(', ')}`);
+    
+    // Check if it's a Handlebars template error
+    if (error.message.includes('Handlebars') || error.message.includes('template') || error.message.includes('{{')) {
+      console.error(`[SST] [${MODULE_NAME}] ╠══════════════════════════════════════════════════════════╣`);
+      console.error(`[SST] [${MODULE_NAME}] ║  This appears to be a template syntax error!`);
+      console.error(`[SST] [${MODULE_NAME}] ║  Check your template for:`);
+      console.error(`[SST] [${MODULE_NAME}] ║  • Unclosed {{#if}} or {{#each}} blocks`);
+      console.error(`[SST] [${MODULE_NAME}] ║  • Missing closing }} brackets`);
+      console.error(`[SST] [${MODULE_NAME}] ║  • Invalid Handlebars syntax`);
+      console.error(`[SST] [${MODULE_NAME}] ║  • Mismatched HTML tags`);
+    }
+    
+    console.error(`[SST] [${MODULE_NAME}] ╠══════════════════════════════════════════════════════════╣`);
+    console.error(`[SST] [${MODULE_NAME}] ║  Stack Trace:`);
+    const stackLines = error.stack.split('\n').slice(0, 5);
+    stackLines.forEach(line => {
+      const trimmedLine = line.trim().substring(0, 65);
+      console.error(`[SST] [${MODULE_NAME}] ║    ${trimmedLine}`);
+    });
+    console.error(`[SST] [${MODULE_NAME}] ╚══════════════════════════════════════════════════════════╝`);
+    
+    // Show toast notification
+    toastr.error(
+      `Render error in message ${mesId}: ${error.message}. Check console for details.`,
+      "Template Render Failed"
     );
   }
 };
 
-const renderTrackerWithoutSim = (mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString) => {
+const renderTrackerWithoutSim = (mesId, get_settings, getReactionEmoji, darkenColor, lastSimJsonString) => {
   // Simply call renderTracker with withSim=false
-  return renderTracker(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString, false);
+  return renderTracker(mesId, get_settings, getReactionEmoji, darkenColor, lastSimJsonString, false);
 };
 
 const refreshAllCards = (get_settings, CONTAINER_ID, renderTrackerWithoutSim) => {

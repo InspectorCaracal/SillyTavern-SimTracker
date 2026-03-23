@@ -30,8 +30,6 @@ import {
 } from "./renderer.js";
 
 import {
-  compiledWrapperTemplate,
-  compiledCardTemplate,
   populateTemplateDropdown,
   handleCustomTemplateUpload,
   loadTemplate,
@@ -46,7 +44,7 @@ import {
   initialize_settings_listeners,
   load_settings_html_manually,
   refresh_settings_ui,
-  defaultSimFields,
+  defaultFieldMappings,
   handlePresetExport,
   handlePresetImport,
   showManagePresetsModal
@@ -135,7 +133,7 @@ jQuery(async () => {
     // Create wrapper functions that pass the required dependencies
     const wrappedLoadTemplate = () => loadTemplate(get_settings, set_settings);
     const wrappedRefreshAllCards = () => refreshAllCards(get_settings, CONTAINER_ID, 
-      (mesId) => renderTrackerWithoutSim(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString));
+      (mesId) => renderTrackerWithoutSim(mesId, get_settings, getReactionEmoji, darkenColor, lastSimJsonString));
     const wrappedMigrateAllSimData = () => migrateAllSimData(get_settings);
     const wrappedHandleCustomTemplateUpload = (event) => handleCustomTemplateUpload(event, set_settings, wrappedLoadTemplate, wrappedRefreshAllCards);
     const wrappedHandlePresetExport = () => handlePresetExport(wrappedLoadTemplate, wrappedRefreshAllCards);
@@ -326,7 +324,7 @@ jQuery(async () => {
 
     MacrosParser.registerMacro("sim_format", () => {
       if (!get_settings("isEnabled")) return "";
-      const fields = get_settings("customFields") || [];
+      const fieldMappings = get_settings("fieldMappings") || [];
       const userFormat = get_settings("trackerFormat") || "auto";
       // For generation, default to JSON when auto is selected
       const format = userFormat === "auto" ? "json" : userFormat;
@@ -364,11 +362,11 @@ jQuery(async () => {
         exampleYaml += "      value: 100\n";
         exampleYaml += "      hidden: true    # Won't appear on the card\n";
 
-        // Add each custom field as additional examples
-        if (fields.length > 0) {
+        // Add each field mapping as additional examples
+        if (fieldMappings.length > 0) {
           exampleYaml += "    \n";
-          exampleYaml += "    # Additional custom fields:\n";
-          fields.slice(0, 5).forEach((field) => {  // Limit to first 5 to avoid overwhelming
+          exampleYaml += "    # Additional fields:\n";
+          fieldMappings.slice(0, 5).forEach((field) => {  // Limit to first 5 to avoid overwhelming
             const sanitizedKey = sanitizeFieldKey(field.key);
             if (!['ap', 'inventory'].includes(sanitizedKey)) {
               exampleYaml += `    # ${sanitizedKey}: [${sanitizedKey.toUpperCase()}_VALUE]  # ${field.description}\n`;
@@ -417,11 +415,11 @@ ${exampleYaml}\`\`\``;
         exampleJson += "        \"hidden\": true  // Won't appear on the card\n";
         exampleJson += "      }"
 
-        // Add each custom field as additional examples
-        if (fields.length > 0) {
+        // Add each field mapping as additional examples
+        if (fieldMappings.length > 0) {
           exampleJson += ",\n      \n";
-          exampleJson += "      // Additional custom fields:\n";
-          const additionalFields = fields.filter(f => {
+          exampleJson += "      // Additional fields:\n";
+          const additionalFields = fieldMappings.filter(f => {
             const key = sanitizeFieldKey(f.key);
             return !['ap', 'inventory'].includes(key);
           }).slice(0, 5);
@@ -1054,7 +1052,7 @@ cards:
         
         // Render without processing (we already processed above)
         setGenerationInProgress(false);
-        renderTrackerWithoutSim(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString);
+        renderTrackerWithoutSim(mesId, get_settings, getReactionEmoji, darkenColor, lastSimJsonString);
         return;
       }
       
@@ -1072,7 +1070,7 @@ cards:
       
       let withSim = getGenerationInProgress();
       setGenerationInProgress(false);
-      renderTracker(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString, withSim);
+      renderTracker(mesId, get_settings, getReactionEmoji, darkenColor, lastSimJsonString, withSim);
       
       // Update tracking after successful render
       if (message && message.swipe_id !== undefined) {
@@ -1093,7 +1091,7 @@ cards:
     
     eventSource.on(event_types.MESSAGE_EDITED, (mesId) => {
       log(`Message ${mesId} was edited. Re-rendering tracker card.`);
-      renderTrackerWithoutSim(mesId, get_settings, compiledWrapperTemplate, compiledCardTemplate, getReactionEmoji, darkenColor, lastSimJsonString);
+      renderTrackerWithoutSim(mesId, get_settings, getReactionEmoji, darkenColor, lastSimJsonString);
       
       // Show warning about potential desync
       const tracking = getTrackingIds();

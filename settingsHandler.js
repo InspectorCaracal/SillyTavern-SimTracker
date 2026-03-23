@@ -4,69 +4,34 @@ const { extensionSettings, saveSettingsDebounced } = SillyTavern.getContext();
 import { sanitizeFieldKey, DEBUG } from "./utils.js";
 import { currentTemplatePosition, unescapeHtml } from "./templating.js";
 import { populateTemplateDropdown } from "./templating.js";
+import { removeGlobalSidebars } from "./renderer.js";
 
 const MODULE_NAME = "silly-sim-tracker";
 
-// Default fields for sim data, used for both initial settings and the {{sim_format}} macro
-const defaultSimFields = [
-  { key: "ap", description: "Affection Points (0-200)" },
-  { key: "dp", description: "Desire Points (0-150)" },
-  { key: "tp", description: "Trust Points (0-150)" },
-  { key: "cp", description: "Contempt Points (0-150)" },
-  {
-    key: "apChange",
-    description:
-      "Change in Affection from last action (positive/negative/zero)",
-  },
-  {
-    key: "dpChange",
-    description: "Change in Desire from last action (positive/negative/zero)",
-  },
-  {
-    key: "tpChange",
-    description: "Change in Trust from last action (positive/negative/zero)",
-  },
-  {
-    key: "cpChange",
-    description: "Change in Contempt from last action (positive/negative/zero)",
-  },
-  {
-    key: "relationshipStatus",
-    description: "Relationship status text (e.g., 'Romantic Interest')",
-  },
-  {
-    key: "desireStatus",
-    description: "Desire status text (e.g., 'A smoldering flame builds.')",
-  },
-  { key: "preg", description: "Boolean for pregnancy status (true/false)" },
-  { key: "days_preg", description: "Days pregnant (if applicable)" },
-  { key: "conception_date", description: "Date of conception (YYYY-MM-DD)" },
-  {
-    key: "health",
-    description: "Health Status (0=Unharmed, 1=Injured, 2=Critical)",
-  },
-  { key: "bg", description: "Hex color for card background (e.g., #6a5acd)" },
-  {
-    key: "last_react",
-    description: "Reaction to User (0=Neutral, 1=Like, 2=Dislike)",
-  },
-  {
-    key: "internal_thought",
-    description: "Character's current internal thoughts/feelings",
-  },
-  {
-    key: "days_since_first_meeting",
-    description: "Total days since first meeting",
-  },
-  {
-    key: "inactive",
-    description: "Boolean for character inactivity (true/false)",
-  },
-  {
-    key: "inactiveReason",
-    description:
-      "Reason for inactivity (0=Not inactive, 1=Asleep, 2=Comatose, 3=Contempt/anger, 4=Incapacitated, 5=Death)",
-  },
+// Default field mappings for sim data - single source of truth for field metadata
+const defaultFieldMappings = [
+  { key: "ap", description: "Affection Points (0-200)", displayName: "AFFECTION", icon: "❤️", type: "stat", maxValue: 200, excludeFromDynamic: false },
+  { key: "dp", description: "Desire Points (0-150)", displayName: "DESIRE", icon: "🔥", type: "stat", maxValue: 150, excludeFromDynamic: false },
+  { key: "tp", description: "Trust Points (0-150)", displayName: "TRUST", icon: "🤝", type: "stat", maxValue: 150, excludeFromDynamic: false },
+  { key: "cp", description: "Contempt Points (0-150)", displayName: "CONTEMPT", icon: "💔", type: "stat", maxValue: 150, excludeFromDynamic: false },
+  { key: "apChange", description: "Change in Affection from last action", displayName: "AFFECTION CHANGE", icon: "❤️", type: "change", excludeFromDynamic: true },
+  { key: "dpChange", description: "Change in Desire from last action", displayName: "DESIRE CHANGE", icon: "🔥", type: "change", excludeFromDynamic: true },
+  { key: "tpChange", description: "Change in Trust from last action", displayName: "TRUST CHANGE", icon: "🤝", type: "change", excludeFromDynamic: true },
+  { key: "cpChange", description: "Change in Contempt from last action", displayName: "CONTEMPT CHANGE", icon: "💔", type: "change", excludeFromDynamic: true },
+  { key: "relationshipStatus", description: "Relationship status text", displayName: "RELATIONSHIP", icon: "💑", type: "status", excludeFromDynamic: true },
+  { key: "desireStatus", description: "Desire status text", displayName: "DESIRE STATUS", icon: "🔥", type: "status", excludeFromDynamic: true },
+  { key: "internal_thought", description: "Character's internal thoughts", displayName: "THOUGHTS", icon: "💭", type: "thought", excludeFromDynamic: true },
+  { key: "thought", description: "Character's thoughts", displayName: "THOUGHTS", icon: "💭", type: "thought", excludeFromDynamic: true },
+  { key: "health", description: "Health Status (0=Unharmed, 1=Injured, 2=Critical)", displayName: "HEALTH", icon: "💚", type: "stat", maxValue: 2, excludeFromDynamic: true },
+  { key: "inactive", description: "Boolean for character inactivity", displayName: "ACTIVITY", icon: "⚡", type: "boolean", excludeFromDynamic: true },
+  { key: "inactiveReason", description: "Reason for inactivity", displayName: "INACTIVE REASON", icon: "😴", type: "inactive_reason", excludeFromDynamic: true },
+  { key: "days_since_first_meeting", description: "Total days since first meeting", displayName: "DAYS KNOWN", icon: "📅", type: "stat", excludeFromDynamic: false },
+  { key: "days_preg", description: "Days pregnant", displayName: "PREGNANT DAYS", icon: "🤰", type: "stat", excludeFromDynamic: false },
+  { key: "last_react", description: "Reaction to User (0=Neutral, 1=Like, 2=Dislike)", displayName: "REACTION", icon: "😐", type: "reaction", excludeFromDynamic: true },
+  { key: "bg", description: "Hex color for card background", displayName: "BACKGROUND", icon: "🎨", type: "color", excludeFromDynamic: true },
+  { key: "preg", description: "Boolean for pregnancy status", displayName: "PREGNANT", icon: "🤰", type: "boolean", excludeFromDynamic: false },
+  { key: "conception_date", description: "Date of conception", displayName: "CONCEPTION DATE", icon: "📅", type: "date", excludeFromDynamic: false },
+  { key: "name", description: "Character name", displayName: "NAME", icon: "👤", type: "string", excludeFromDynamic: true },
 ];
 
 const default_settings = {
@@ -79,10 +44,11 @@ const default_settings = {
   templatePosition: "BOTTOM", // Default template position
   datingSimPrompt:
     "Default prompt could not be loaded. Please check file path.",
-  customFields: [...defaultSimFields], // Clone the default fields
+  fieldMappings: [...defaultFieldMappings], // Clone the default field mappings
   hideSimBlocks: true, // New setting to hide sim blocks in message text
   userPresets: [], // New setting to store user presets
   trackerFormat: "auto", // New setting for tracker format (auto, json, or yaml)
+  usePatternDetectionFallback: true, // Use pattern-based detection for unknown fields
 };
 
 let settings = {};
@@ -126,8 +92,19 @@ const loadDefaultTemplate = async () => {
       set_settings("datingSimPrompt", templateData.sysPrompt);
     }
 
-    if (templateData.customFields !== undefined) {
-      set_settings("customFields", templateData.customFields);
+    if (templateData.fieldMappings !== undefined) {
+      set_settings("fieldMappings", templateData.fieldMappings);
+    } else if (templateData.customFields !== undefined) {
+      // Backwards compatibility: convert old customFields format
+      const converted = templateData.customFields.map(field => ({
+        key: field.key,
+        description: field.description,
+        displayName: field.key.toUpperCase().replace(/_/g, ' '),
+        icon: "📊",
+        type: "stat",
+        excludeFromDynamic: ['name', 'internal_thought', 'thought', 'relationshipStatus', 'desireStatus', 'inactive', 'inactiveReason', 'bg', 'health', 'last_react', 'preg', 'conception_date', 'days_preg'].includes(field.key)
+      }));
+      set_settings("fieldMappings", converted);
     }
 
     if (templateData.extSettings) {
@@ -187,6 +164,8 @@ const bind_setting = (selector, key, type) => {
     }
     set_settings(key, value);
     if (key === "templateFile") {
+      // Remove old sidebars before loading new template
+      removeGlobalSidebars();
       loadTemplate().then(() => {
         refreshAllCards();
       });
@@ -244,8 +223,19 @@ const initialize_settings_listeners = (
           set_settings("datingSimPrompt", presetData.sysPrompt);
         }
 
-        if (presetData.customFields !== undefined) {
-          set_settings("customFields", presetData.customFields);
+        if (presetData.fieldMappings !== undefined) {
+          set_settings("fieldMappings", presetData.fieldMappings);
+        } else if (presetData.customFields !== undefined) {
+          // Backwards compatibility: convert old customFields format
+          const converted = presetData.customFields.map(field => ({
+            key: field.key,
+            description: field.description,
+            displayName: field.key.toUpperCase().replace(/_/g, ' '),
+            icon: "📊",
+            type: "stat",
+            excludeFromDynamic: ['name', 'internal_thought', 'thought', 'relationshipStatus', 'desireStatus', 'inactive', 'inactiveReason', 'bg', 'health', 'last_react', 'preg', 'conception_date', 'days_preg'].includes(field.key)
+          }));
+          set_settings("fieldMappings", converted);
         }
 
         if (presetData.extSettings) {
@@ -278,8 +268,19 @@ const initialize_settings_listeners = (
             set_settings("datingSimPrompt", templateData.sysPrompt);
           }
 
-          if (templateData.customFields !== undefined) {
-            set_settings("customFields", templateData.customFields);
+          if (templateData.fieldMappings !== undefined) {
+            set_settings("fieldMappings", templateData.fieldMappings);
+          } else if (templateData.customFields !== undefined) {
+            // Backwards compatibility: convert old customFields format
+            const converted = templateData.customFields.map(field => ({
+              key: field.key,
+              description: field.description,
+              displayName: field.key.toUpperCase().replace(/_/g, ' '),
+              icon: "📊",
+              type: "stat",
+              excludeFromDynamic: ['name', 'internal_thought', 'thought', 'relationshipStatus', 'desireStatus', 'inactive', 'inactiveReason', 'bg', 'health', 'last_react', 'preg', 'conception_date', 'days_preg'].includes(field.key)
+            }));
+            set_settings("fieldMappings", converted);
           }
 
           if (templateData.extSettings) {
@@ -300,6 +301,7 @@ const initialize_settings_listeners = (
       }
 
       set_settings("templateFile", selectedValue);
+      removeGlobalSidebars();
       await loadTemplate();
       refreshAllCards();
       
@@ -318,6 +320,7 @@ const initialize_settings_listeners = (
     DEBUG && console.log(`[SST] [${MODULE_NAME}] Clearing custom template.`);
     set_settings("customTemplateHtml", "");
     toastr.info("Custom template cleared. Reverted to default.");
+    removeGlobalSidebars();
     await loadTemplate(); // Reload to apply the selected default
     refreshAllCards();
   });
@@ -364,8 +367,8 @@ const initialize_settings_listeners = (
         set_settings(key, default_settings[key]);
       });
 
-      // Special handling for customFields to ensure we clone the array
-      set_settings("customFields", [...defaultSimFields]);
+      // Special handling for fieldMappings to ensure we clone the array
+      set_settings("fieldMappings", [...defaultFieldMappings]);
 
       // Special handling for userPresets to ensure we have an empty array
       set_settings("userPresets", []);
@@ -376,6 +379,7 @@ const initialize_settings_listeners = (
         refresh_settings_ui();
 
         // Reload template and refresh all cards
+        removeGlobalSidebars();
         loadTemplate().then(() => {
           refreshAllCards();
         });
@@ -407,7 +411,7 @@ const initialize_settings_listeners = (
                         <div style="flex: 1;"></div>
                         <button id="addCustomFieldBtn" class="menu_button">Add New Field</button>
                     </div>
-                    <div id="customFieldsList" class="sst-fields-container" style="flex: 1; overflow-y: auto;">
+                    <div id="fieldMappingsList" class="sst-fields-container" style="flex: 1; overflow-y: auto;">
                         <!-- Fields will be populated here by JavaScript -->
                     </div>
                 </div>
@@ -422,26 +426,65 @@ const initialize_settings_listeners = (
 
     // Get references to modal elements
     const $modal = $("#sst-custom-fields-modal");
-    const $fieldsContainer = $modal.find("#customFieldsList");
+    const $fieldsContainer = $modal.find("#fieldMappingsList");
     const $addFieldButton = $modal.find("#addCustomFieldBtn");
     const $modalClose = $modal.find("#sst-modal-close");
 
     // Create field template
     const createFieldTemplate = () => {
       return $(`
-                <div class="sst-field-item">
-                    <div class="sst-field-header">
-                        <input type="text" class="field-key-display field-key text_pole" placeholder="Field key" style="margin-right: 10px;" />
-                        <div>
+                <div class="sst-field-item" style="margin-bottom: 10px; border: 1px solid #444; border-radius: 8px; padding: 10px;">
+                    <div class="sst-field-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <input type="text" class="field-key-display field-key text_pole" placeholder="Field key" style="margin-right: 10px; flex: 1;" />
+                        <div style="display: flex; gap: 5px;">
+                            <button class="sst-move-up menu_button" title="Move up">↑</button>
+                            <button class="sst-move-down menu_button" title="Move down">↓</button>
                             <button class="sst-toggle-field menu_button">Expand</button>
-                            <button class="remove-field-btn menu_button" style="margin-left: 5px;">Remove</button>
+                            <button class="remove-field-btn menu_button">Remove</button>
                         </div>
                     </div>
-                    <div class="sst-field-details" style="display: none; padding: 10px; border-top: 1px solid #444; margin-top: 5px;">
+                    <div class="sst-field-details" style="display: none; padding: 10px; border-top: 1px solid #444; margin-top: 10px;">
                         <div style="display: flex; flex-direction: column; gap: 10px;">
                             <div>
                                 <label>Description for LLM:</label>
                                 <input type="text" class="field-description text_pole" placeholder="Field description" style="width: 100%;" />
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <div style="flex: 1;">
+                                    <label>Display Name:</label>
+                                    <input type="text" class="field-display-name text_pole" placeholder="Display name" style="width: 100%;" />
+                                </div>
+                                <div style="width: 60px;">
+                                    <label>Icon:</label>
+                                    <input type="text" class="field-icon text_pole" placeholder="Icon" style="width: 100%; text-align: center;" maxlength="2" />
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <div style="flex: 1;">
+                                    <label>Type:</label>
+                                    <select class="field-type text_pole" style="width: 100%;">
+                                        <option value="stat">Stat</option>
+                                        <option value="change">Change</option>
+                                        <option value="status">Status</option>
+                                        <option value="thought">Thought</option>
+                                        <option value="boolean">Boolean</option>
+                                        <option value="date">Date</option>
+                                        <option value="color">Color</option>
+                                        <option value="reaction">Reaction</option>
+                                        <option value="inactive_reason">Inactive Reason</option>
+                                        <option value="string">String</option>
+                                    </select>
+                                </div>
+                                <div style="flex: 1;">
+                                    <label>Max Value:</label>
+                                    <input type="number" class="field-max-value text_pole" placeholder="Max" style="width: 100%;" />
+                                </div>
+                            </div>
+                            <div>
+                                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                                    <input type="checkbox" class="field-exclude-from-dynamic" />
+                                    Exclude from dynamic fields display
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -451,7 +494,7 @@ const initialize_settings_listeners = (
 
     // Function to render the list of fields
     const renderFields = () => {
-      const fields = get_settings("customFields") || [];
+      const fields = get_settings("fieldMappings") || [];
       $fieldsContainer.empty();
       fields.forEach((field, index) => {
         const $fieldElement = createFieldTemplate();
@@ -465,7 +508,7 @@ const initialize_settings_listeners = (
             const newValue = $(this).val();
             const updatedFields = [...fields];
             updatedFields[index].key = sanitizeFieldKey(newValue); // Sanitize on input
-            set_settings("customFields", updatedFields);
+            set_settings("fieldMappings", updatedFields);
           });
 
         // Set values in the description input
@@ -476,13 +519,89 @@ const initialize_settings_listeners = (
             const newValue = $(this).val();
             const updatedFields = [...fields];
             updatedFields[index].description = newValue;
-            set_settings("customFields", updatedFields);
+            set_settings("fieldMappings", updatedFields);
           });
 
+        // Set values in the display name input
+        $fieldElement
+          .find(".field-display-name")
+          .val(field.displayName)
+          .on("input", function () {
+            const newValue = $(this).val();
+            const updatedFields = [...fields];
+            updatedFields[index].displayName = newValue;
+            set_settings("fieldMappings", updatedFields);
+          });
+
+        // Set values in the icon input
+        $fieldElement
+          .find(".field-icon")
+          .val(field.icon)
+          .on("input", function () {
+            const newValue = $(this).val();
+            const updatedFields = [...fields];
+            updatedFields[index].icon = newValue;
+            set_settings("fieldMappings", updatedFields);
+          });
+
+        // Set values in the type select
+        $fieldElement
+          .find(".field-type")
+          .val(field.type || "stat")
+          .on("change", function () {
+            const newValue = $(this).val();
+            const updatedFields = [...fields];
+            updatedFields[index].type = newValue;
+            set_settings("fieldMappings", updatedFields);
+          });
+
+        // Set values in the max value input
+        $fieldElement
+          .find(".field-max-value")
+          .val(field.maxValue !== undefined ? field.maxValue : "")
+          .on("input", function () {
+            const newValue = $(this).val();
+            const updatedFields = [...fields];
+            updatedFields[index].maxValue = newValue === "" ? undefined : parseInt(newValue, 10);
+            set_settings("fieldMappings", updatedFields);
+          });
+
+        // Set values in the exclude from dynamic checkbox
+        $fieldElement
+          .find(".field-exclude-from-dynamic")
+          .prop("checked", field.excludeFromDynamic || false)
+          .on("change", function () {
+            const newValue = $(this).is(":checked");
+            const updatedFields = [...fields];
+            updatedFields[index].excludeFromDynamic = newValue;
+            set_settings("fieldMappings", updatedFields);
+          });
+
+        // Handle remove button
         $fieldElement.find(".remove-field-btn").on("click", function () {
           const updatedFields = fields.filter((_, i) => i !== index);
-          set_settings("customFields", updatedFields);
+          set_settings("fieldMappings", updatedFields);
           renderFields(); // Re-render the list
+        });
+
+        // Handle move up button
+        $fieldElement.find(".sst-move-up").on("click", function () {
+          if (index > 0) {
+            const updatedFields = [...fields];
+            [updatedFields[index - 1], updatedFields[index]] = [updatedFields[index], updatedFields[index - 1]];
+            set_settings("fieldMappings", updatedFields);
+            renderFields(); // Re-render the list
+          }
+        });
+
+        // Handle move down button
+        $fieldElement.find(".sst-move-down").on("click", function () {
+          if (index < fields.length - 1) {
+            const updatedFields = [...fields];
+            [updatedFields[index], updatedFields[index + 1]] = [updatedFields[index + 1], updatedFields[index]];
+            set_settings("fieldMappings", updatedFields);
+            renderFields(); // Re-render the list
+          }
         });
 
         // Handle toggle button
@@ -504,12 +623,16 @@ const initialize_settings_listeners = (
 
     // Add new field button listener
     $addFieldButton.on("click", () => {
-      const fields = get_settings("customFields") || [];
+      const fields = get_settings("fieldMappings") || [];
       const newField = {
         key: "new_field_key",
         description: "Description for the LLM",
+        displayName: "NEW FIELD KEY",
+        icon: "📊",
+        type: "stat",
+        excludeFromDynamic: false
       };
-      set_settings("customFields", [...fields, newField]);
+      set_settings("fieldMappings", [...fields, newField]);
       renderFields(); // Re-render the list
 
       // Scroll to the bottom where the new field was added
@@ -564,9 +687,32 @@ const initialize_settings = async () => {
   );
   settings = extensionSettings[MODULE_NAME];
 
-  // Ensure that customFields always has the default values if it's empty or missing
-  if (!settings.customFields || settings.customFields.length === 0) {
-    settings.customFields = [...defaultSimFields];
+  // Migration: Convert old customFields to new fieldMappings format
+  if (settings.customFields && !settings.fieldMappings) {
+    DEBUG && console.log(`[SST] [${MODULE_NAME}] Migrating customFields to fieldMappings format...`);
+    settings.fieldMappings = settings.customFields.map(field => {
+      // Check if this field exists in defaults to get proper metadata
+      const defaultField = defaultFieldMappings.find(df => df.key === field.key);
+      if (defaultField) {
+        return { ...defaultField };
+      }
+      // For custom fields not in defaults, create basic mapping
+      return {
+        key: field.key,
+        description: field.description,
+        displayName: field.key.toUpperCase().replace(/_/g, ' '),
+        icon: "📊",
+        type: "stat",
+        excludeFromDynamic: ['name', 'internal_thought', 'thought', 'relationshipStatus', 'desireStatus', 'inactive', 'inactiveReason', 'bg', 'health', 'last_react', 'preg', 'conception_date', 'days_preg'].includes(field.key)
+      };
+    });
+    delete settings.customFields; // Clean up old key
+    DEBUG && console.log(`[SST] [${MODULE_NAME}] Migration complete. Migrated ${settings.fieldMappings.length} fields.`);
+  }
+
+  // Ensure that fieldMappings always has the default values if it's empty or missing
+  if (!settings.fieldMappings || settings.fieldMappings.length === 0) {
+    settings.fieldMappings = [...defaultFieldMappings];
   }
 
   // Ensure that userPresets always exists
@@ -589,8 +735,24 @@ const initialize_settings = async () => {
         settings.datingSimPrompt = templateData.sysPrompt;
       }
 
-      if (templateData.customFields !== undefined) {
-        settings.customFields = templateData.customFields;
+      if (templateData.fieldMappings !== undefined) {
+        settings.fieldMappings = templateData.fieldMappings;
+      } else if (templateData.customFields !== undefined) {
+        // Backwards compatibility: convert old customFields format
+        settings.fieldMappings = templateData.customFields.map(field => {
+          const defaultField = defaultFieldMappings.find(df => df.key === field.key);
+          if (defaultField) {
+            return { ...defaultField };
+          }
+          return {
+            key: field.key,
+            description: field.description,
+            displayName: field.key.toUpperCase().replace(/_/g, ' '),
+            icon: "📊",
+            type: "stat",
+            excludeFromDynamic: ['name', 'internal_thought', 'thought', 'relationshipStatus', 'desireStatus', 'inactive', 'inactiveReason', 'bg', 'health', 'last_react', 'preg', 'conception_date', 'days_preg'].includes(field.key)
+          };
+        });
       }
 
       if (templateData.extSettings) {
@@ -618,8 +780,24 @@ const initialize_settings = async () => {
           settings.datingSimPrompt = templateData.sysPrompt;
         }
 
-        if (templateData.customFields !== undefined) {
-          settings.customFields = templateData.customFields;
+        if (templateData.fieldMappings !== undefined) {
+          settings.fieldMappings = templateData.fieldMappings;
+        } else if (templateData.customFields !== undefined) {
+          // Backwards compatibility: convert old customFields format
+          settings.fieldMappings = templateData.customFields.map(field => {
+            const defaultField = defaultFieldMappings.find(df => df.key === field.key);
+            if (defaultField) {
+              return { ...defaultField };
+            }
+            return {
+              key: field.key,
+              description: field.description,
+              displayName: field.key.toUpperCase().replace(/_/g, ' '),
+              icon: "📊",
+              type: "stat",
+              excludeFromDynamic: ['name', 'internal_thought', 'thought', 'relationshipStatus', 'desireStatus', 'inactive', 'inactiveReason', 'bg', 'health', 'last_react', 'preg', 'conception_date', 'days_preg'].includes(field.key)
+            };
+          });
         }
 
         if (templateData.extSettings) {
@@ -746,7 +924,7 @@ const handlePresetExport = (loadTemplate, refreshAllCards) => {
       }
 
       if ($includeCustomFields.is(":checked")) {
-        preset.customFields = get_settings("customFields") || [];
+        preset.fieldMappings = get_settings("fieldMappings") || [];
       }
 
       if ($includeSettings.is(":checked")) {
@@ -842,9 +1020,26 @@ const handlePresetImport = (event, loadTemplate, refreshAllCards) => {
         set_settings("datingSimPrompt", preset.sysPrompt);
       }
 
-      // Apply custom fields if included
-      if (preset.customFields !== undefined) {
-        set_settings("customFields", preset.customFields);
+      // Apply field mappings if included (supports both new and old format)
+      if (preset.fieldMappings !== undefined) {
+        set_settings("fieldMappings", preset.fieldMappings);
+      } else if (preset.customFields !== undefined) {
+        // Backwards compatibility: convert old customFields format
+        const converted = preset.customFields.map(field => {
+          const defaultField = defaultFieldMappings.find(df => df.key === field.key);
+          if (defaultField) {
+            return { ...defaultField };
+          }
+          return {
+            key: field.key,
+            description: field.description,
+            displayName: field.key.toUpperCase().replace(/_/g, ' '),
+            icon: "📊",
+            type: "stat",
+            excludeFromDynamic: ['name', 'internal_thought', 'thought', 'relationshipStatus', 'desireStatus', 'inactive', 'inactiveReason', 'bg', 'health', 'last_react', 'preg', 'conception_date', 'days_preg'].includes(field.key)
+          };
+        });
+        set_settings("fieldMappings", converted);
       }
 
       // Apply extension settings if included
@@ -860,6 +1055,7 @@ const handlePresetImport = (event, loadTemplate, refreshAllCards) => {
       set_settings("userPresets", userPresets);
 
       // Reload template and refresh cards
+      removeGlobalSidebars();
       await loadTemplate();
       refreshAllCards();
 
@@ -952,8 +1148,25 @@ const showManagePresetsModal = async (loadTemplate, refreshAllCards) => {
           set_settings("datingSimPrompt", preset.sysPrompt);
         }
 
-        if (preset.customFields !== undefined) {
-          set_settings("customFields", preset.customFields);
+        if (preset.fieldMappings !== undefined) {
+          set_settings("fieldMappings", preset.fieldMappings);
+        } else if (preset.customFields !== undefined) {
+          // Backwards compatibility: convert old customFields format
+          const converted = preset.customFields.map(field => {
+            const defaultField = defaultFieldMappings.find(df => df.key === field.key);
+            if (defaultField) {
+              return { ...defaultField };
+            }
+            return {
+              key: field.key,
+              description: field.description,
+              displayName: field.key.toUpperCase().replace(/_/g, ' '),
+              icon: "📊",
+              type: "stat",
+              excludeFromDynamic: ['name', 'internal_thought', 'thought', 'relationshipStatus', 'desireStatus', 'inactive', 'inactiveReason', 'bg', 'health', 'last_react', 'preg', 'conception_date', 'days_preg'].includes(field.key)
+            };
+          });
+          set_settings("fieldMappings", converted);
         }
 
         if (preset.extSettings) {
@@ -963,6 +1176,7 @@ const showManagePresetsModal = async (loadTemplate, refreshAllCards) => {
         }
 
         // Reload template and refresh cards
+        removeGlobalSidebars();
         await loadTemplate();
         refreshAllCards();
 
@@ -1033,7 +1247,7 @@ const showManagePresetsModal = async (loadTemplate, refreshAllCards) => {
 
 // Export functions and variables
 export {
-  defaultSimFields,
+  defaultFieldMappings,
   default_settings,
   settings,
   settings_ui_map,

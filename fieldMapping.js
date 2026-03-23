@@ -55,77 +55,6 @@ import { DEBUG } from "./utils.js";
 
 const MODULE_NAME = "silly-sim-tracker";
 
-// Default field mapping for common stat fields
-const DEFAULT_FIELD_MAPPING = {
-  // Core stats
-  ap: { displayName: "AFFECTION", icon: "❤️", type: "stat", maxValue: 200 },
-  dp: { displayName: "DESIRE", icon: "🔥", type: "stat", maxValue: 150 },
-  tp: { displayName: "TRUST", icon: "🤝", type: "stat", maxValue: 150 },
-  cp: { displayName: "CONTEMPT", icon: "💔", type: "stat", maxValue: 150 },
-  
-  // Change indicators
-  apChange: { displayName: "AFFECTION CHANGE", icon: "❤️", type: "change" },
-  dpChange: { displayName: "DESIRE CHANGE", icon: "🔥", type: "change" },
-  tpChange: { displayName: "TRUST CHANGE", icon: "🤝", type: "change" },
-  cpChange: { displayName: "CONTEMPT CHANGE", icon: "💔", type: "change" },
-  
-  // Status fields
-  relationshipStatus: { displayName: "RELATIONSHIP", icon: "💑", type: "status" },
-  desireStatus: { displayName: "DESIRE STATUS", icon: "🔥", type: "status" },
-  internal_thought: { displayName: "THOUGHTS", icon: "💭", type: "thought" },
-  thought: { displayName: "THOUGHTS", icon: "💭", type: "thought" },
-  
-  // Health and activity
-  health: { displayName: "HEALTH", icon: "💚", type: "stat", maxValue: 2, 
-           customIcons: { 0: "💚", 1: "🤕", 2: "💀" } },
-  inactive: { displayName: "ACTIVITY", icon: "⚡", type: "boolean" },
-  inactiveReason: { displayName: "INACTIVE REASON", icon: "😴", type: "inactive_reason" },
-  
-  // Time tracking
-  days_since_first_meeting: { displayName: "DAYS KNOWN", icon: "📅", type: "stat" },
-  days_preg: { displayName: "PREGNANT DAYS", icon: "🤰", type: "stat" },
-  
-  // Reactions
-  last_react: { displayName: "REACTION", icon: "😐", type: "reaction",
-               customIcons: { 0: "😐", 1: "👍", 2: "👎" } },
-  
-  // Appearance
-  bg: { displayName: "BACKGROUND", icon: "🎨", type: "color" },
-  
-  // Pregnancy
-  preg: { displayName: "PREGNANT", icon: "🤰", type: "boolean" },
-  conception_date: { displayName: "CONCEPTION DATE", icon: "📅", type: "date" },
-  
-  // Generic fallbacks for common patterns
-  level: { displayName: "LEVEL", icon: "⭐", type: "stat" },
-  xp: { displayName: "EXPERIENCE", icon: "⚡", type: "stat" },
-  energy: { displayName: "ENERGY", icon: "🔋", type: "stat", maxValue: 100 },
-  stamina: { displayName: "STAMINA", icon: "💪", type: "stat", maxValue: 100 },
-  mood: { displayName: "MOOD", icon: "😊", type: "stat" },
-  stress: { displayName: "STRESS", icon: "😰", type: "stat" },
-  happiness: { displayName: "HAPPINESS", icon: "😄", type: "stat" },
-  anger: { displayName: "ANGER", icon: "😡", type: "stat" },
-  fear: { displayName: "FEAR", icon: "😨", type: "stat" },
-  love: { displayName: "LOVE", icon: "💕", type: "stat" },
-  lust: { displayName: "LUST", icon: "💋", type: "stat" },
-  friendship: { displayName: "FRIENDSHIP", icon: "👫", type: "stat" },
-  respect: { displayName: "RESPECT", icon: "🙏", type: "stat" },
-  loyalty: { displayName: "LOYALTY", icon: "🤝", type: "stat" },
-  
-  // RPG-style stats
-  strength: { displayName: "STRENGTH", icon: "💪", type: "stat" },
-  dexterity: { displayName: "DEXTERITY", icon: "🤸", type: "stat" },
-  intelligence: { displayName: "INTELLIGENCE", icon: "🧠", type: "stat" },
-  wisdom: { displayName: "WISDOM", icon: "🦉", type: "stat" },
-  charisma: { displayName: "CHARISMA", icon: "✨", type: "stat" },
-  constitution: { displayName: "CONSTITUTION", icon: "🛡️", type: "stat" },
-  
-  // Generic numeric stats
-  points: { displayName: "POINTS", icon: "⭐", type: "stat" },
-  score: { displayName: "SCORE", icon: "🎯", type: "stat" },
-  rating: { displayName: "RATING", icon: "⭐", type: "stat" },
-};
-
 /**
  * Check if a value is an operation object (has add, subtract, remove, or icon keys)
  * @param {*} value - The value to check
@@ -195,15 +124,17 @@ const calculateChangeFromOperations = (fieldValue) => {
  * @param {*} fieldValue - The field value from the JSON data
  * @param {Object} characterData - The character data to check for custom icons
  * @param {Object} worldData - The world data to check for shared custom icons
+ * @param {Array} fieldMappings - Array of field mapping definitions from settings
  * @returns {Object} Display information with displayName, icon, type, etc.
  */
-const generateFieldMapping = (fieldKey, fieldValue, characterData = {}, worldData = {}) => {
+const generateFieldMapping = (fieldKey, fieldValue, characterData = {}, worldData = {}, fieldMappings = []) => {
   // Extract the actual value (handles operation objects)
   const actualValue = extractFieldValue(fieldValue);
   
-  // Check if we have a predefined mapping
-  let mapping = DEFAULT_FIELD_MAPPING[fieldKey] ? 
-    { ...DEFAULT_FIELD_MAPPING[fieldKey], key: fieldKey } : null;
+  // Check if we have a mapping from settings
+  const fieldMapping = fieldMappings.find(fm => fm.key === fieldKey);
+  let mapping = fieldMapping ? 
+    { ...fieldMapping, key: fieldKey } : null;
   
   // Check for custom icon in the new unified format (field object with icon property)
   let customIcon = extractIconFromField(fieldValue);
@@ -238,7 +169,7 @@ const generateFieldMapping = (fieldKey, fieldValue, characterData = {}, worldDat
     }
   }
   
-  // If we have a predefined mapping, use it as base but allow icon override
+  // If we have a mapping from settings, use it as base but allow icon override
   if (mapping) {
     if (customIcon) {
       mapping.icon = customIcon;
@@ -355,16 +286,27 @@ const generateFieldMapping = (fieldKey, fieldValue, characterData = {}, worldDat
  * Extract and map all stat fields from character data
  * @param {Object} characterStats - The character's stats object
  * @param {Object} worldData - The world data object for shared icons
+ * @param {Array} fieldMappings - Array of field mapping definitions from settings
+ * @param {boolean} usePatternDetectionFallback - Whether to use pattern detection for unknown fields
  * @returns {Array} Array of field mappings for displayable stats
  */
-const extractDisplayableFields = (characterStats, worldData = {}) => {
+const extractDisplayableFields = (characterStats, worldData = {}, fieldMappings = [], usePatternDetectionFallback = true) => {
   console.log('[SST DEBUG] extractDisplayableFields called with:', { characterStats, keys: Object.keys(characterStats || {}) });
   const fields = [];
-  const excludedFields = new Set([
-    'name', 'internal_thought', 'thought', 'relationshipStatus', 'desireStatus', 
-    'inactive', 'inactiveReason', 'bg', 'health', 'last_react', 'preg', 
-    'conception_date', 'days_preg'
-  ]);
+  
+  // Build excluded fields set from fieldMappings
+  const excludedFields = new Set(
+    fieldMappings
+      .filter(fm => fm.excludeFromDynamic)
+      .map(fm => fm.key)
+  );
+  
+  // Also add legacy hardcoded exclusions if fieldMappings is empty (fallback)
+  if (fieldMappings.length === 0) {
+    ['name', 'internal_thought', 'thought', 'relationshipStatus', 'desireStatus', 
+     'inactive', 'inactiveReason', 'bg', 'health', 'last_react', 'preg', 
+     'conception_date', 'days_preg'].forEach(key => excludedFields.add(key));
+  }
   
   // Process all numeric and change fields for the stats display
   Object.keys(characterStats).forEach(key => {
@@ -393,9 +335,19 @@ const extractDisplayableFields = (characterStats, worldData = {}) => {
       return;
     }
     
-    // Only include fields that are numeric stats
-    if (!excludedFields.has(key) && (typeof actualValue === 'number' || actualValue === "?")) {
-      const mapping = generateFieldMapping(key, value, characterStats, worldData);
+    // Check if field is known in fieldMappings
+    const fieldMapping = fieldMappings.find(fm => fm.key === key);
+    const isKnownField = !!fieldMapping;
+    
+    // Only include fields that are:
+    // 1. Known in fieldMappings with excludeFromDynamic=false, OR
+    // 2. Unknown fields (when usePatternDetectionFallback is true) and not excluded
+    const shouldInclude = isKnownField 
+      ? !fieldMapping.excludeFromDynamic 
+      : (usePatternDetectionFallback && !excludedFields.has(key));
+    
+    if (shouldInclude && (typeof actualValue === 'number' || actualValue === "?")) {
+      const mapping = generateFieldMapping(key, value, characterStats, worldData, fieldMappings);
       if (mapping.type === 'stat') {
         // Calculate change value from operation object (add/subtract)
         const changeValue = calculateChangeFromOperations(value);
@@ -409,15 +361,21 @@ const extractDisplayableFields = (characterStats, worldData = {}) => {
     }
   });
   
-  // Sort fields by importance (predefined fields first, then alphabetically)
+  // Sort fields by array order in fieldMappings (settings order), then alphabetically for unknown fields
   fields.sort((a, b) => {
-    const aPredefined = DEFAULT_FIELD_MAPPING[a.key] ? 0 : 1;
-    const bPredefined = DEFAULT_FIELD_MAPPING[b.key] ? 0 : 1;
+    const aIndex = fieldMappings.findIndex(fm => fm.key === a.key);
+    const bIndex = fieldMappings.findIndex(fm => fm.key === b.key);
     
-    if (aPredefined !== bPredefined) {
-      return aPredefined - bPredefined;
+    // Both known fields - sort by their position in fieldMappings
+    if (aIndex !== -1 && bIndex !== -1) {
+      return aIndex - bIndex;
     }
     
+    // Known field comes before unknown field
+    if (aIndex !== -1) return -1;
+    if (bIndex !== -1) return 1;
+    
+    // Both unknown - sort alphabetically by display name
     return a.displayName.localeCompare(b.displayName);
   });
   
@@ -454,7 +412,6 @@ const generateDynamicStatsHtml = (fields) => {
 };
 
 export {
-  DEFAULT_FIELD_MAPPING,
   generateFieldMapping,
   extractDisplayableFields,
   generateDynamicStatsHtml

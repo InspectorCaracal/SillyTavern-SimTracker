@@ -1,0 +1,168 @@
+<!-- TEMPLATE NAME: Sidebar + Inline Combo -->
+<!-- AUTHOR: SillySimTracker -->
+<!-- POSITION: RIGHT -->
+<!-- 
+  This template demonstrates the multi-position feature.
+  It renders cards in both the sidebar (RIGHT) and inline (INLINE) positions.
+  
+  POSITION: RIGHT - Shows a tabbed sidebar with full card details
+  POSITION: INLINE - Shows compact inline cards embedded in messages
+-->
+
+<style>
+  /* RIGHT Sidebar Styles */
+  .sim-tracker-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+    position: relative;
+    height: 100%;
+    pointer-events: none;
+  }
+  
+  .sim-tracker-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: auto;
+  }
+  
+  .sim-tracker-tab {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(145deg, #2c2c2c, #1a1a1a);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  }
+  
+  .sim-tracker-tab:hover {
+    transform: scale(1.05);
+  }
+  
+  .sim-tracker-tab.active {
+    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: 0 0 15px rgba(106, 90, 205, 0.5);
+  }
+  
+  .sim-tracker-card {
+    width: 280px;
+    border-radius: 12px;
+    padding: 16px;
+    position: absolute;
+    right: 80px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: none;
+    pointer-events: auto;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  }
+  
+  .sim-tracker-card.active {
+    display: block;
+  }
+  
+  .character-header {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 12px;
+    color: #fff;
+  }
+  
+  .stat-item {
+    margin-bottom: 8px;
+    color: rgba(255, 255, 255, 0.9);
+  }
+</style>
+
+<div class="sim-tracker-container">
+  <div class="sim-tracker-tabs">
+    {{#each cards}}
+    <div class="sim-tracker-tab" data-character="{{@index}}">
+      {{initials characterName}}
+    </div>
+    {{/each}}
+  </div>
+
+  {{#each cards}}
+  <div class="sim-tracker-card" data-character="{{@index}}" style="background: linear-gradient(145deg, {{adjustColorBrightness bgColor 70}} 0%, {{adjustColorBrightness darkerBgColor 60}} 100%);">
+    <div class="character-header">{{characterName}}</div>
+    <div class="stat-item">Affection: {{stats.ap}}</div>
+    <div class="stat-item">Desire: {{stats.dp}}</div>
+    <div class="stat-item">Trust: {{stats.trust}}</div>
+  </div>
+  {{/each}}
+</div>
+
+<!-- POSITION: INLINE -->
+
+<style>
+  /* INLINE Styles */
+  .inline-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 0;
+  }
+  
+  .inline-card {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 20px;
+    background: linear-gradient(145deg, {{defaultBgColor}}, {{darkenColor defaultBgColor 80}});
+    border: 1px solid rgba(255,255,255,0.1);
+    font-size: 14px;
+    color: #fff;
+  }
+  
+  .inline-initials {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.2);
+    font-weight: bold;
+  }
+  
+  .inline-stats {
+    display: flex;
+    gap: 12px;
+    font-size: 12px;
+  }
+  
+  .inline-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+</style>
+
+<div class="inline-container">
+  {{#each cards}}
+  <div class="inline-card">
+    <div class="inline-initials">{{initials characterName}}</div>
+    <div class="inline-stats">
+      <span class="inline-stat">♥ {{stats.ap}}</span>
+      <span class="inline-stat">⚡ {{stats.dp}}</span>
+    </div>
+  </div>
+  {{/each}}
+</div>
+
+<!-- CARD_TEMPLATE_END -->
