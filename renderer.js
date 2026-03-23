@@ -1130,6 +1130,184 @@ const refreshAllCards = (get_settings, CONTAINER_ID, renderTrackerWithoutSim) =>
   console.log(`[SST DEBUG] refreshAllCards END - globalLeftSidebar exists: ${!!globalLeftSidebar}, globalRightSidebar exists: ${!!globalRightSidebar}`);
 };
 
+/**
+ * Refresh a single message's tracker containers without affecting other messages.
+ * This removes only the position-specific containers for the given message and re-renders it.
+ * 
+ * @param {number} mesId - The message ID to refresh
+ * @param {Function} renderTrackerWithoutSim - The render function to call
+ */
+const refreshSingleMessage = (mesId, renderTrackerWithoutSim) => {
+  console.log(`[SST DEBUG] refreshSingleMessage START for mesId ${mesId}`);
+  
+  // Find the message element
+  const messageElement = document.querySelector(`div[mesid="${mesId}"] .mes_text`);
+  if (!messageElement) {
+    console.log(`[SST DEBUG] Message ${mesId} not found in DOM, skipping`);
+    return;
+  }
+  
+  // Remove position-specific containers for this message only
+  ['inline', 'left', 'right', 'above', 'bottom'].forEach(position => {
+    const positionContainerId = getContainerId(position.toUpperCase());
+    const containers = messageElement.querySelectorAll(`#${positionContainerId}`);
+    containers.forEach((container) => {
+      console.log(`[SST DEBUG] Removing ${position} container from message ${mesId}`);
+      container.remove();
+    });
+  });
+  
+  // Also remove any legacy container
+  const legacyContainers = messageElement.querySelectorAll(`#${CONTAINER_ID}`);
+  legacyContainers.forEach((container) => {
+    console.log(`[SST DEBUG] Removing legacy container from message ${mesId}`);
+    container.remove();
+  });
+  
+  // Clear the cache for this message to force re-render
+  messageDataCache.delete(mesId);
+  
+  // Re-render only this message
+  console.log(`[SST DEBUG] Re-rendering message ${mesId}`);
+  renderTrackerWithoutSim(mesId);
+  
+  console.log(`[SST DEBUG] refreshSingleMessage END for mesId ${mesId}`);
+};
+
+/**
+ * Refresh only the sidebars without re-rendering message cards.
+ * This regenerates sidebar content based on current card data from storage.
+ * 
+ * @param {Function} get_settings - Settings getter function
+ */
+const refreshSidebarsOnly = (get_settings) => {
+  console.log(`[SST DEBUG] refreshSidebarsOnly START`);
+  
+  // Check if we have any sidebar positions to update
+  const positions = availableTemplatePositions || [currentTemplatePosition];
+  const hasLeftSidebar = positions.includes('LEFT');
+  const hasRightSidebar = positions.includes('RIGHT');
+  
+  if (!hasLeftSidebar && !hasRightSidebar) {
+    console.log(`[SST DEBUG] No sidebar positions active, skipping sidebar refresh`);
+    return;
+  }
+  
+  // Get all cards from storage
+  const allCardsFromStorage = getAllCards();
+  const allCardsList = Object.values(allCardsFromStorage);
+  
+  if (allCardsList.length === 0) {
+    console.log(`[SST DEBUG] No cards in storage, clearing sidebars`);
+    if (globalLeftSidebar) {
+      const leftContent = globalLeftSidebar.querySelector("#sst-sidebar-left-content");
+      if (leftContent) leftContent.innerHTML = '';
+    }
+    if (globalRightSidebar) {
+      const rightContent = globalRightSidebar.querySelector("#sst-sidebar-right-content");
+      if (rightContent) rightContent.innerHTML = '';
+    }
+    return;
+  }
+  
+  console.log(`[SST DEBUG] Refreshing sidebars with ${allCardsList.length} cards`);
+  
+  // Get current world data
+  const currentDate = new Date();
+  const currentTime = currentDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const context = getContext();
+  const chatMetadata = context.chatMetadata || context.chat_metadata || {};
+  const worldData = chatMetadata.sim_tracker?.worldData || {};
+  const defaultBgColor = worldData.bg || worldData.bgColor || worldData.color || get_settings("defaultBgColor");
+  const isTabbedTemplate = get_settings("templateFile")?.includes("tabs") ||
+                           get_settings("templateFile")?.includes("inline") ||
+                           (get_settings("customTemplateHtml")?.includes("sim-tracker-tabs")) ||
+                           (get_settings("customTemplateHtml")?.includes("{{#each cards}}"));
+  
+  // Build template configuration
+  const templateConfig = {
+    currentDate,
+    currentTime,
+    defaultBgColor,
+    darkenColor: (color, percent) => { /* simple darken implementation */
+      const num = parseInt(color.replace("#", ""), 16);
+      const amt = Math.round(2.55 * percent);
+      const R = (num >> 16) - amt;
+      const G = (num >> 8 & 0x00FF) - amt;
+      const B = (num & 0x0000FF) - amt;
+      return "#" + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 + (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 + (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
+    },
+    getReactionEmoji: () => '',
+    get_settings,
+    extractDisplayableFields,
+    generateDynamicStatsHtml,
+    isTabbedTemplate,
+    fieldMappings: get_settings("fieldMappings") || [],
+    usePatternDetectionFallback: get_settings("usePatternDetectionFallback") !== false
+  };
+  
+  // Build template context
+  const allCardsTemplateData = buildTemplateContext(allCardsList, worldData, templateConfig);
+  const templateData = {
+    cards: Array.isArray(allCardsTemplateData) ? allCardsTemplateData : allCardsTemplateData.cards,
+    allCards: Array.isArray(allCardsTemplateData) ? allCardsTemplateData : allCardsTemplateData.cards,
+    worldName: worldData.name || "",
+    currentDate: currentDate.toISOString().split("T")[0],
+    currentTime: currentTime,
+    defaultBgColor: defaultBgColor
+  };
+  
+  // Update left sidebar
+  if (hasLeftSidebar && globalLeftSidebar) {
+    const leftWrapperTemplate = compiledWrapperTemplates['LEFT'];
+    const leftCardTemplate = compiledCardTemplates['LEFT'];
+    if (leftWrapperTemplate && leftCardTemplate) {
+      let cardsHtml = '';
+      if (isTabbedTemplate) {
+        cardsHtml = leftCardTemplate(templateData);
+      } else {
+        cardsHtml = templateData.cards
+          .map(cardData => leftCardTemplate({ ...cardData, allCards: templateData.allCards }))
+          .join("");
+      }
+      const sidebarContent = leftWrapperTemplate({ cardsHtml });
+      const leftContent = globalLeftSidebar.querySelector("#sst-sidebar-left-content");
+      if (leftContent) {
+        leftContent.innerHTML = sidebarContent;
+        // Re-attach event listeners
+        attachTabEventListeners(leftContent);
+        console.log(`[SST DEBUG] Left sidebar updated`);
+      }
+    }
+  }
+  
+  // Update right sidebar
+  if (hasRightSidebar && globalRightSidebar) {
+    const rightWrapperTemplate = compiledWrapperTemplates['RIGHT'];
+    const rightCardTemplate = compiledCardTemplates['RIGHT'];
+    if (rightWrapperTemplate && rightCardTemplate) {
+      let cardsHtml = '';
+      if (isTabbedTemplate) {
+        cardsHtml = rightCardTemplate(templateData);
+      } else {
+        cardsHtml = templateData.cards
+          .map(cardData => rightCardTemplate({ ...cardData, allCards: templateData.allCards }))
+          .join("");
+      }
+      const sidebarContent = rightWrapperTemplate({ cardsHtml });
+      const rightContent = globalRightSidebar.querySelector("#sst-sidebar-right-content");
+      if (rightContent) {
+        rightContent.innerHTML = sidebarContent;
+        // Re-attach event listeners
+        attachTabEventListeners(rightContent);
+        console.log(`[SST DEBUG] Right sidebar updated`);
+      }
+    }
+  }
+  
+  console.log(`[SST DEBUG] refreshSidebarsOnly END`);
+};
+
 // Export functions
 export {
   updateLeftSidebar,
@@ -1139,6 +1317,8 @@ export {
   renderTracker,
   renderTrackerWithoutSim,
   refreshAllCards,
+  refreshSingleMessage,
+  refreshSidebarsOnly,
   injectTemplateStyles,
   messageDataCache,
   mesTextsWithPreparingText,

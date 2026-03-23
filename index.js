@@ -14,6 +14,8 @@ import {
   renderTracker,
   renderTrackerWithoutSim,
   refreshAllCards,
+  refreshSingleMessage,
+  refreshSidebarsOnly,
   updateLeftSidebar,
   updateRightSidebar,
   removeGlobalSidebars,
@@ -134,6 +136,9 @@ jQuery(async () => {
     const wrappedLoadTemplate = () => loadTemplate(get_settings, set_settings);
     const wrappedRefreshAllCards = () => refreshAllCards(get_settings, CONTAINER_ID, 
       (mesId) => renderTrackerWithoutSim(mesId, get_settings, getReactionEmoji, darkenColor, lastSimJsonString));
+    const wrappedRefreshSingleMessage = (mesId) => refreshSingleMessage(mesId, 
+      (id) => renderTrackerWithoutSim(id, get_settings, getReactionEmoji, darkenColor, lastSimJsonString));
+    const wrappedRefreshSidebarsOnly = () => refreshSidebarsOnly(get_settings);
     const wrappedMigrateAllSimData = () => migrateAllSimData(get_settings);
     const wrappedHandleCustomTemplateUpload = (event) => handleCustomTemplateUpload(event, set_settings, wrappedLoadTemplate, wrappedRefreshAllCards);
     const wrappedHandlePresetExport = () => handlePresetExport(wrappedLoadTemplate, wrappedRefreshAllCards);
@@ -1083,11 +1088,12 @@ cards:
       wrappedRefreshAllCards();
     });
     eventSource.on(event_types.MORE_MESSAGES_LOADED, wrappedRefreshAllCards);
-    eventSource.on(event_types.MESSAGE_UPDATED, wrappedRefreshAllCards);
     
     eventSource.on(event_types.MESSAGE_EDITED, (mesId) => {
       log(`Message ${mesId} was edited. Re-rendering tracker card.`);
-      renderTrackerWithoutSim(mesId, get_settings, getReactionEmoji, darkenColor, lastSimJsonString);
+      // Refresh only the edited message and sidebars
+      wrappedRefreshSingleMessage(mesId);
+      wrappedRefreshSidebarsOnly();
       
       // Show warning about potential desync
       const tracking = getTrackingIds();
@@ -1105,6 +1111,12 @@ cards:
       eventSource.on(event_types.MESSAGE_DELETED, (mesId) => {
         log(`Message ${mesId} was deleted.`);
         
+        // Clear the cache for the deleted message
+        messageDataCache.delete(mesId);
+        
+        // Refresh sidebars only (message is already gone from DOM)
+        wrappedRefreshSidebarsOnly();
+        
         const tracking = getTrackingIds();
         if (mesId <= tracking.mesId) {
           console.warn(`[SST] Message ${mesId} was deleted. Sim data may be out of sync. Run /sst-init-metadata to resync if needed.`);
@@ -1117,8 +1129,9 @@ cards:
     
     // Handle message update (includes deletion in some ST versions)
     eventSource.on(event_types.MESSAGE_UPDATED, (mesId) => {
-      // Refresh cards as before
-      wrappedRefreshAllCards();
+      // Refresh only the updated message and sidebars
+      wrappedRefreshSingleMessage(mesId);
+      wrappedRefreshSidebarsOnly();
       
       // Additional check for potential desync
       const context = getContext();
